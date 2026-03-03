@@ -286,8 +286,8 @@ export default function App() {
     const qBlogs = query(collection(db, 'artifacts', appId, 'public', 'data', 'blogs'), orderBy('date', 'desc'));
     const unsubBlogs = onSnapshot(qBlogs, (snap) => setBlogs(snap.docs.map(d => ({ id: d.id, ...d.data() }))), console.error);
 
-    // 6. Posing Library Fetch (프라이빗 또는 공용, 현재는 구조상 users 폴더 사용)
-    const qPosing = query(collection(db, 'artifacts', appId, 'users', user.uid, 'posing_refs'), orderBy('createdAt', 'desc'));
+    // 6. Posing Library Fetch (공용 폴더로 변경)
+    const qPosing = query(collection(db, 'artifacts', appId, 'public', 'data', 'posing_refs'), orderBy('createdAt', 'desc'));
     const unsubPosing = onSnapshot(qPosing, (snap) => setPhotos(snap.docs.map(d => ({ id: d.id, ...d.data() }))), console.error);
 
     return () => {
@@ -619,7 +619,7 @@ export default function App() {
 
 
   // ==========================================
-  // [Posing 로직] (기존 Firestore 연동 유지)
+  // [Posing 로직] (공용 경로로 변경)
   // ==========================================
   const handlePosingFileSelect = async (e) => {
     const files = Array.from(e.target.files);
@@ -675,7 +675,8 @@ export default function App() {
     setIsPosingUploading(true);
     try {
       const childrenTags = editData.children.map(c => c.id);
-      await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'posing_refs', editData.id), {
+      // 공용 데이터 저장 경로로 변경 (artifacts/appId/public/data/posing_refs)
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'posing_refs', editData.id), {
         headCount: parseInt(editData.headCount), grandparents: editData.grandparents, parents: editData.parents,
         children: editData.children, childrenTags: childrenTags, petCount: editData.petCount, memo: editData.memo,
       });
@@ -704,7 +705,8 @@ export default function App() {
         children: uploadData.children, childrenTags: childrenTags, petCount: uploadData.petCount, memo: uploadData.memo, 
         isFavorite: false, createdAt: serverTimestamp(),
       };
-      const uploadPromises = selectedImages.map(imgDataUrl => addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'posing_refs'), { imageUrl: imgDataUrl, ...commonData }));
+      // 공용 데이터 저장 경로로 변경 (artifacts/appId/public/data/posing_refs)
+      const uploadPromises = selectedImages.map(imgDataUrl => addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'posing_refs'), { imageUrl: imgDataUrl, ...commonData }));
       await Promise.all(uploadPromises);
       setIsPosingUploadModalOpen(false);
       setSelectedImages([]);
@@ -716,13 +718,15 @@ export default function App() {
   const handlePosingDelete = async (e, docId) => {
     e.stopPropagation(); 
     if (!window.confirm('이 레퍼런스를 삭제하시겠습니까?')) return;
-    try { await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'posing_refs', docId)); if (viewingPhotoId === docId) setViewingPhotoId(null); } catch (e) { console.error(e); }
+    // 공용 데이터 경로에서 삭제
+    try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'posing_refs', docId)); if (viewingPhotoId === docId) setViewingPhotoId(null); } catch (e) { console.error(e); }
   };
 
   const handleToggleFavorite = async (e, docId, currentStatus) => {
     e.stopPropagation();
     if (!user) return;
-    try { await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'posing_refs', docId), { isFavorite: !currentStatus }); } catch (error) { console.error(error); }
+    // 공용 데이터 경로에서 업데이트
+    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'posing_refs', docId), { isFavorite: !currentStatus }); } catch (error) { console.error(error); }
   };
 
   const filteredPhotos = useMemo(() => {
@@ -786,11 +790,11 @@ export default function App() {
   const renderChildTag = (childItem) => {
     if (typeof childItem === 'string') {
         const label = CHILD_OPTIONS.find(c => c.id === childItem)?.label.split(' ')[0] + ' ' + CHILD_OPTIONS.find(c => c.id === childItem)?.label.split(' ')[1];
-        return <span className="text-xs bg-neutral-700 px-1.5 py-0.5 rounded text-neutral-300">{label}</span>;
+        return <span className="text-[10px] md:text-xs bg-neutral-700 px-1.5 py-0.5 rounded text-neutral-300">{label}</span>;
     }
     const label = CHILD_OPTIONS.find(c => c.id === childItem.id)?.label.split(' ')[0] + ' ' + CHILD_OPTIONS.find(c => c.id === childItem.id)?.label.split(' ')[1];
     return (
-        <span className="text-xs bg-neutral-700 px-1.5 py-0.5 rounded text-neutral-300 flex items-center gap-1">
+        <span className="text-[10px] md:text-xs bg-neutral-700 px-1.5 py-0.5 rounded text-neutral-300 flex items-center gap-1">
             {label}
             {childItem.count > 1 && <span className="text-lime-400 font-bold text-[10px] bg-neutral-800 px-1 rounded-full">{childItem.count}</span>}
         </span>
@@ -1758,7 +1762,7 @@ export default function App() {
                       <p className="text-sm mt-2 text-center px-4">필터를 초기화하거나 시안을 업로드해주세요.</p>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-6">
                       {filteredPhotos.map(photo => (
                         <div 
                           key={photo.id} 
@@ -1778,39 +1782,39 @@ export default function App() {
                             </div>
                             
                             {/* Top Action Buttons */}
-                            <div className="absolute top-3 left-3 z-10">
+                            <div className="absolute top-2 left-2 md:top-3 md:left-3 z-10">
                               <button 
                                 onClick={(e) => handleToggleFavorite(e, photo.id, photo.isFavorite)}
-                                className={`p-2 rounded-full transition-all backdrop-blur-sm ${photo.isFavorite ? 'bg-lime-400/20 text-lime-400 hover:bg-lime-400/40' : 'bg-black/50 text-white/70 hover:text-white hover:bg-black/70'}`}
+                                className={`p-1.5 md:p-2 rounded-full transition-all backdrop-blur-sm ${photo.isFavorite ? 'bg-lime-400/20 text-lime-400 hover:bg-lime-400/40' : 'bg-black/50 text-white/70 hover:text-white hover:bg-black/70'}`}
                                 title={photo.isFavorite ? "즐겨찾기 해제" : "즐겨찾기 추가"}
                               >
-                                <Heart className={`w-4 h-4 md:w-5 md:h-5 ${photo.isFavorite ? 'fill-current' : ''}`} />
+                                <Heart className={`w-3.5 h-3.5 md:w-5 md:h-5 ${photo.isFavorite ? 'fill-current' : ''}`} />
                               </button>
                             </div>
 
-                            <div className="absolute top-3 right-3 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity z-10 flex gap-2">
+                            <div className="absolute top-2 right-2 md:top-3 md:right-3 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity z-10 flex gap-1 md:gap-2">
                               <button 
                                 onClick={(e) => handleOpenEditModal(e, photo)}
-                                className="p-2 bg-black/50 text-white rounded-full hover:bg-neutral-600 transition-colors backdrop-blur-sm"
+                                className="p-1.5 md:p-2 bg-black/50 text-white rounded-full hover:bg-neutral-600 transition-colors backdrop-blur-sm"
                                 title="설정 및 수정"
                               >
-                                <Settings className="w-4 h-4" />
+                                <Settings className="w-3.5 h-3.5 md:w-4 md:h-4" />
                               </button>
                               <button 
                                 onClick={(e) => handlePosingDelete(e, photo.id)}
-                                className="p-2 bg-black/50 text-white rounded-full hover:bg-red-600 transition-colors backdrop-blur-sm"
+                                className="p-1.5 md:p-2 bg-black/50 text-white rounded-full hover:bg-red-600 transition-colors backdrop-blur-sm"
                                 title="삭제"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <Trash2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
                               </button>
                             </div>
                           </div>
 
                           {/* Info Card */}
-                          <div className="p-4 flex-1 flex flex-col gap-3">
+                          <div className="p-3 md:p-4 flex-1 flex flex-col gap-2 md:gap-3">
                             <div className="flex justify-between items-start">
                               <div className="flex items-center gap-2">
-                                <span className="bg-neutral-800 text-neutral-200 text-xs font-bold px-2 py-1 rounded">
+                                <span className="bg-neutral-800 text-neutral-200 text-[10px] md:text-xs font-bold px-2 py-1 rounded">
                                   {photo.headCount}인
                                 </span>
                               </div>
@@ -1818,20 +1822,20 @@ export default function App() {
 
                             <div className="space-y-1">
                               {photo.grandparents !== 'none' && (
-                                <div className="flex items-center gap-2 text-sm text-neutral-300">
-                                  <UserPlus className="w-3.5 h-3.5 text-lime-400 flex-shrink-0" />
+                                <div className="flex items-center gap-1.5 md:gap-2 text-[10px] md:text-sm text-neutral-300">
+                                  <UserPlus className="w-3 h-3 md:w-3.5 md:h-3.5 text-lime-400 flex-shrink-0" />
                                   <span className="truncate">{getLabel(GRANDPARENT_OPTIONS, photo.grandparents)}</span>
                                 </div>
                               )}
                               {photo.parents !== 'none' && (
-                                <div className="flex items-center gap-2 text-sm text-neutral-300">
-                                  <Users className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                                <div className="flex items-center gap-1.5 md:gap-2 text-[10px] md:text-sm text-neutral-300">
+                                  <Users className="w-3 h-3 md:w-3.5 md:h-3.5 text-blue-400 flex-shrink-0" />
                                   <span className="truncate">{getLabel(PARENT_OPTIONS, photo.parents)}</span>
                                 </div>
                               )}
                               {(photo.children?.length > 0 || (Array.isArray(photo.children) && photo.children.length > 0)) && (
-                                <div className="flex items-start gap-2 text-sm text-neutral-300 mt-1">
-                                  <Baby className="w-3.5 h-3.5 text-yellow-400 mt-0.5 flex-shrink-0" />
+                                <div className="flex items-start gap-1.5 md:gap-2 text-[10px] md:text-sm text-neutral-300 mt-1">
+                                  <Baby className="w-3 h-3 md:w-3.5 md:h-3.5 text-yellow-400 mt-0.5 flex-shrink-0" />
                                   <div className="flex flex-wrap gap-1">
                                     {photo.children.map((c, idx) => (
                                         <React.Fragment key={idx}>
@@ -1842,9 +1846,9 @@ export default function App() {
                                 </div>
                               )}
                               {photo.petCount > 0 && (
-                                <div className="flex items-center gap-2 text-sm text-neutral-300 mt-1">
-                                    <Dog className="w-3.5 h-3.5 text-lime-400 flex-shrink-0" />
-                                    <span className="text-xs bg-neutral-700 px-1.5 py-0.5 rounded text-neutral-300">
+                                <div className="flex items-center gap-1.5 md:gap-2 text-[10px] md:text-sm text-neutral-300 mt-1">
+                                    <Dog className="w-3 h-3 md:w-3.5 md:h-3.5 text-lime-400 flex-shrink-0" />
+                                    <span className="text-[10px] md:text-xs bg-neutral-700 px-1.5 py-0.5 rounded text-neutral-300">
                                         반려견 {photo.petCount}마리
                                     </span>
                                 </div>
@@ -1852,8 +1856,8 @@ export default function App() {
                             </div>
 
                             {photo.memo && (
-                                <div className="mt-auto pt-3 border-t border-neutral-800 flex items-start gap-2 text-xs text-neutral-400">
-                                    <AlignLeft className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-neutral-500" />
+                                <div className="mt-auto pt-2 md:pt-3 border-t border-neutral-800 flex items-start gap-1.5 md:gap-2 text-[10px] md:text-xs text-neutral-400">
+                                    <AlignLeft className="w-3 h-3 md:w-3.5 md:h-3.5 flex-shrink-0 mt-0.5 text-neutral-500" />
                                     <p className="line-clamp-2 leading-relaxed">{photo.memo}</p>
                                 </div>
                             )}
@@ -1864,6 +1868,19 @@ export default function App() {
                   )}
                 </div>
               </div>
+
+              {/* Mobile Filter Floating Button */}
+              <button
+                onClick={() => setIsMobileFilterOpen(true)}
+                className="lg:hidden fixed bottom-6 right-6 bg-lime-400 text-neutral-950 p-4 rounded-full shadow-[0_4px_20px_rgba(163,230,53,0.4)] z-[90] flex items-center justify-center transition-transform hover:scale-105 active:scale-95"
+              >
+                <Filter size={24} />
+                {activeFilterCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-neutral-950">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </button>
             </div>
           )}
 
@@ -2288,7 +2305,7 @@ export default function App() {
             <div className="flex items-center justify-between p-5 md:p-6 border-b border-neutral-800">
               <div className="flex items-center gap-3">
                 <Upload className="w-5 h-5 text-lime-400 flex-shrink-0" />
-                <h2 className="text-lg md:text-xl font-bold text-white truncate">새 레퍼런스 일괄 등록</h2>
+                <h2 className="text-lg md:text-xl font-bold text-white truncate">새 레퍼런 일괄 등록</h2>
                 {selectedImages.length > 0 && (
                     <span className="hidden sm:inline-block bg-lime-400/20 text-lime-400 text-xs font-bold px-2.5 py-1 rounded-full border border-lime-400/30 whitespace-nowrap">
                         {selectedImages.length}/10 장 선택됨
