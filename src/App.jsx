@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { 
-  UploadCloud, Image as ImageIcon, HardDrive, BrainCircuit, 
+import {
+  UploadCloud, Image as ImageIcon, HardDrive, BrainCircuit,
   Folder, Search, Filter, LayoutGrid, Layers, Plus, X, Trash2, GripHorizontal,
-  ChevronLeft, ChevronRight, Settings, Instagram, Edit2, Camera, Upload, 
+  ChevronLeft, ChevronRight, Settings, Instagram, Edit2, Camera, Upload,
   Users, Baby, UserPlus, Save, Check, Minus, Maximize2, Dog, Heart, AlignLeft,
-  AlignCenter, AlignRight, MessageCircle, FileText, Calendar as CalendarIcon, 
-  Video, ChevronUp, ChevronDown, Heading1, Heading2, Type, List, ListOrdered, 
-  Quote, GalleryHorizontalEnd, SplitSquareHorizontal, Lightbulb, Link2, Menu
+  AlignCenter, AlignRight, MessageCircle, FileText, Calendar as CalendarIcon,
+  Video, ChevronUp, ChevronDown, Heading1, Heading2, Type, List, ListOrdered,
+  Quote, GalleryHorizontalEnd, SplitSquareHorizontal, Lightbulb, Link2, Menu,
+  Pin
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
@@ -62,7 +63,7 @@ const fetchWithBackoff = async (url, options, maxRetries = 5) => {
 
 // 구현 코드 1: Gemini AI 호출
 const generateTagsWithGemini = async (base64Image, promptText) => {
-  const apiKey = "AIzaSyDA2ZyxBtdFoO9xk8dm81X8F5xOQF4JJEQ"; 
+  const apiKey = "AIzaSyDA2ZyxBtdFoO9xk8dm81X8F5xOQF4JJEQ";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
   const payload = {
     contents: [
@@ -74,8 +75,8 @@ const generateTagsWithGemini = async (base64Image, promptText) => {
     const data = await fetchWithBackoff(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (text) {
-      try { const parsed = JSON.parse(text); return Array.isArray(parsed) ? parsed : ['기타']; } 
-      catch(e) { const match = text.match(/\[.*\]/s); if (match) return JSON.parse(match[0]); }
+      try { const parsed = JSON.parse(text); return Array.isArray(parsed) ? parsed : ['기타']; }
+      catch (e) { const match = text.match(/\[.*\]/s); if (match) return JSON.parse(match[0]); }
     }
   } catch (e) { console.error("Gemini API Error:", e); }
   return ['분석실패'];
@@ -88,76 +89,76 @@ const uploadToGoogleDriveMock = async (file, folderName) => {
       // 구글 드라이브 API를 통해 폴더 생성 후 원본 이미지를 업로드하고 WebViewLink 반환 시뮬레이션
       const mockDriveLink = `https://drive.google.com/file/d/mock-id-${Date.now()}/view`;
       resolve(mockDriveLink);
-    }, 2000); 
+    }, 2000);
   });
 };
 
 // 구현 코드 3: 브라우저 내부 즉시 압축 (Canvas API)
 const createThumbnail = (file) => {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let MAX_WIDTH = 800;
-          let scaleSize = MAX_WIDTH / img.width;
-          canvas.width = MAX_WIDTH;
-          canvas.height = img.height * scaleSize;
-          let ctx = canvas.getContext('2d');
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let MAX_WIDTH = 800;
+        let scaleSize = MAX_WIDTH / img.width;
+        canvas.width = MAX_WIDTH;
+        canvas.height = img.height * scaleSize;
+        let ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        let quality = 0.8;
+        let dataUrl = canvas.toDataURL('image/jpeg', quality);
+        // 200KB (약 266KB Base64) 이하로 압축
+        const TARGET_SIZE_BYTES = 200 * 1024 * 1.33;
+        while (dataUrl.length > TARGET_SIZE_BYTES && quality > 0.3) {
+          quality -= 0.1;
+          dataUrl = canvas.toDataURL('image/jpeg', quality);
+        }
+        if (dataUrl.length > TARGET_SIZE_BYTES) {
+          canvas.width *= 0.7;
+          canvas.height *= 0.7;
+          ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          let quality = 0.8;
-          let dataUrl = canvas.toDataURL('image/jpeg', quality);
-          // 200KB (약 266KB Base64) 이하로 압축
-          const TARGET_SIZE_BYTES = 200 * 1024 * 1.33; 
-          while (dataUrl.length > TARGET_SIZE_BYTES && quality > 0.3) {
-            quality -= 0.1;
-            dataUrl = canvas.toDataURL('image/jpeg', quality);
-          }
-          if (dataUrl.length > TARGET_SIZE_BYTES) {
-            canvas.width *= 0.7;
-            canvas.height *= 0.7;
-            ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            dataUrl = canvas.toDataURL('image/jpeg', 0.5);
-          }
-          resolve(dataUrl);
-        };
-        img.src = e.target.result;
+          dataUrl = canvas.toDataURL('image/jpeg', 0.5);
+        }
+        resolve(dataUrl);
       };
-      reader.readAsDataURL(file);
-    });
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
 };
 
 const processImage = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target.result;
-        img.onload = () => {
-          let canvas = document.createElement('canvas');
-          let ctx = canvas.getContext('2d');
-          let width = img.width;
-          let height = img.height;
-          const MAX_DIMENSION = 1600; 
-          if (width > height) { if (width > MAX_DIMENSION) { height = Math.round(height * (MAX_DIMENSION / width)); width = MAX_DIMENSION; } } 
-          else { if (height > MAX_DIMENSION) { width = Math.round(width * (MAX_DIMENSION / height)); height = MAX_DIMENSION; } }
-          canvas.width = width; canvas.height = height;
-          ctx.drawImage(img, 0, 0, width, height);
-          const MAX_SIZE_BYTES = 1000000; 
-          let quality = 0.9;
-          let dataUrl = canvas.toDataURL('image/jpeg', quality);
-          while (dataUrl.length > MAX_SIZE_BYTES * 1.33 && quality > 0.5) {
-            quality -= 0.1; dataUrl = canvas.toDataURL('image/jpeg', quality);
-          }
-          resolve(dataUrl);
-        };
-        img.onerror = reject;
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        let canvas = document.createElement('canvas');
+        let ctx = canvas.getContext('2d');
+        let width = img.width;
+        let height = img.height;
+        const MAX_DIMENSION = 1600;
+        if (width > height) { if (width > MAX_DIMENSION) { height = Math.round(height * (MAX_DIMENSION / width)); width = MAX_DIMENSION; } }
+        else { if (height > MAX_DIMENSION) { width = Math.round(width * (MAX_DIMENSION / height)); height = MAX_DIMENSION; } }
+        canvas.width = width; canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+        const MAX_SIZE_BYTES = 1000000;
+        let quality = 0.9;
+        let dataUrl = canvas.toDataURL('image/jpeg', quality);
+        while (dataUrl.length > MAX_SIZE_BYTES * 1.33 && quality > 0.5) {
+          quality -= 0.1; dataUrl = canvas.toDataURL('image/jpeg', quality);
+        }
+        resolve(dataUrl);
       };
-      reader.onerror = reject;
-    });
+      img.onerror = reject;
+    };
+    reader.onerror = reject;
+  });
 };
 
 // --- Calendar Helpers ---
@@ -170,7 +171,7 @@ const toISODate = (date) => {
 
 export default function App() {
   // --- Global View State ---
-  const [currentView, setCurrentView] = useState('archive'); 
+  const [currentView, setCurrentView] = useState('archive');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [user, setUser] = useState(null);
 
@@ -191,17 +192,17 @@ export default function App() {
   const [accounts, setAccounts] = useState(['메인 계정']);
   const [activeAccount, setActiveAccount] = useState('메인 계정');
   const [allGrids, setAllGrids] = useState([]); // Firestore Raw Data
-  const [selectedPost, setSelectedPost] = useState(null); 
-  const [lightboxPost, setLightboxPost] = useState(null); 
-  const [currentSlideIndex, setCurrentSlideIndex] = useState(0); 
+  const [selectedPost, setSelectedPost] = useState(null);
+  const [lightboxPost, setLightboxPost] = useState(null);
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
 
   // --- 3. Posing Library State ---
   const [photos, setPhotos] = useState([]);
   const [isPosingUploadModalOpen, setIsPosingUploadModalOpen] = useState(false);
-  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false); 
+  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
   const [selectedImages, setSelectedImages] = useState([]);
   const [isPosingUploading, setIsPosingUploading] = useState(false);
-  const [viewingPhotoId, setViewingPhotoId] = useState(null); 
+  const [viewingPhotoId, setViewingPhotoId] = useState(null);
   const [editData, setEditData] = useState(null);
   const [uploadData, setUploadData] = useState({ headCount: 3, grandparents: 'none', parents: 'both', children: [], petCount: 0, memo: '' });
   const [filters, setFilters] = useState({ headCount: 'all', grandparents: 'all', parents: 'all', children: [], includePets: false, onlyFavorites: false });
@@ -233,9 +234,9 @@ export default function App() {
   const [newAccountName, setNewAccountName] = useState('');
   const [newThreadAccountName, setNewThreadAccountName] = useState('');
   const [newBlogAccountName, setNewBlogAccountName] = useState('');
-  const [editingIgAcc, setEditingIgAcc] = useState(null); 
-  const [editingThreadAcc, setEditingThreadAcc] = useState(null); 
-  const [editingBlogAcc, setEditingBlogAcc] = useState(null); 
+  const [editingIgAcc, setEditingIgAcc] = useState(null);
+  const [editingThreadAcc, setEditingThreadAcc] = useState(null);
+  const [editingBlogAcc, setEditingBlogAcc] = useState(null);
   const [aiPrompt, setAiPrompt] = useState(DEFAULT_AI_PROMPT);
   const [tempPrompt, setTempPrompt] = useState(DEFAULT_AI_PROMPT);
   const [alertMessage, setAlertMessage] = useState('');
@@ -244,7 +245,7 @@ export default function App() {
   const [deleteConfirmBlogAcc, setDeleteConfirmBlogAcc] = useState(null);
   const [postDeleteConfirm, setPostDeleteConfirm] = useState(false);
   const [deleteConfirmCategory, setDeleteConfirmCategory] = useState(null);
-  
+
   // 구글 드라이브 연동 상태 추가
   const [isDriveConnected, setIsDriveConnected] = useState(false);
   const [driveAccount, setDriveAccount] = useState('');
@@ -257,11 +258,11 @@ export default function App() {
   // ==========================================
   useEffect(() => {
     const initAuth = async () => {
-        try {
-            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                await signInWithCustomToken(auth, __initial_auth_token);
-            } else { await signInAnonymously(auth); }
-        } catch (error) { console.error("Auth error:", error); await signInAnonymously(auth).catch(console.error); }
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else { await signInAnonymously(auth); }
+      } catch (error) { console.error("Auth error:", error); await signInAnonymously(auth).catch(console.error); }
     };
     initAuth();
     const unsubscribe = onAuthStateChanged(auth, setUser);
@@ -273,16 +274,16 @@ export default function App() {
 
     // 1. Settings Fetch (공용)
     const unsubSettings = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'general'), (docSnap) => {
-        if (docSnap.exists()) {
-            const data = docSnap.data();
-            if (data.accounts) setAccounts(data.accounts);
-            if (data.threadAccounts) setThreadAccounts(data.threadAccounts);
-            if (data.blogAccounts) setBlogAccounts(data.blogAccounts);
-            if (data.aiPrompt) { setAiPrompt(data.aiPrompt); setTempPrompt(data.aiPrompt); }
-            if (data.categories) setCategories(data.categories);
-            if (data.isDriveConnected !== undefined) setIsDriveConnected(data.isDriveConnected);
-            if (data.driveAccount !== undefined) setDriveAccount(data.driveAccount);
-        }
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.accounts) setAccounts(data.accounts);
+        if (data.threadAccounts) setThreadAccounts(data.threadAccounts);
+        if (data.blogAccounts) setBlogAccounts(data.blogAccounts);
+        if (data.aiPrompt) { setAiPrompt(data.aiPrompt); setTempPrompt(data.aiPrompt); }
+        if (data.categories) setCategories(data.categories);
+        if (data.isDriveConnected !== undefined) setIsDriveConnected(data.isDriveConnected);
+        if (data.driveAccount !== undefined) setDriveAccount(data.driveAccount);
+      }
     });
 
     // 2. Archive Gallery Fetch (공용)
@@ -312,8 +313,8 @@ export default function App() {
 
   // Firestore DB에 전역 설정 저장 헬퍼
   const saveSettingsToDB = async (newSettings) => {
-      if (!user) return;
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'general'), newSettings, { merge: true });
+    if (!user) return;
+    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'general'), newSettings, { merge: true });
   };
 
 
@@ -329,46 +330,46 @@ export default function App() {
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
-    
+
     setIsArchiveUploading(true);
-    
+
     // 1단계: 브라우저 내부 캔버스 압축 (200KB)
     setArchiveUploadProgress({ step: 1, text: '원본 이미지 로드 및 썸네일 압축 중...' });
     const thumbnailData = await createThumbnail(file);
-    
+
     // 2단계: Gemini AI로 태그 추출
     setArchiveUploadProgress({ step: 2, text: 'Gemini AI 자동 태그 분석 중...' });
     const aiTags = await generateTagsWithGemini(thumbnailData, aiPrompt);
     const primaryTag = aiTags[0] || '기타';
     const numTag = aiTags.find(t => t.includes('인')) || 'N인';
-    
+
     // 네이밍 룰에 따른 폴더명 조합
     const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
     const folderName = `${today}_${primaryTag}_고객명_${numTag}P`;
-    
+
     // 3단계: 구글 드라이브 백엔드 업로드 시뮬레이션
     setArchiveUploadProgress({ step: 3, text: 'Google Drive 고화질 원본 전송 중...' });
     const driveLink = await uploadToGoogleDriveMock(file, folderName);
-    
+
     // 4단계: Firestore 통합 메타데이터 저장
     setArchiveUploadProgress({ step: 4, text: 'Firestore DB 저장 중...' });
-    const newImage = { 
-      thumbnail: thumbnailData, 
-      tags: aiTags, 
-      folderName, 
+    const newImage = {
+      thumbnail: thumbnailData,
+      tags: aiTags,
+      folderName,
       driveLink,
-      createdAt: serverTimestamp() 
+      createdAt: serverTimestamp()
     };
-    
+
     try {
-        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'gallery'), newImage);
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'gallery'), newImage);
     } catch (err) {
-        console.error("Firestore Upload Error", err);
-        setAlertMessage("업로드 실패. 용량을 확인해주세요.");
+      console.error("Firestore Upload Error", err);
+      setAlertMessage("업로드 실패. 용량을 확인해주세요.");
     } finally {
-        setIsArchiveUploading(false);
-        setArchiveUploadProgress({ step: 0, text: '' });
-        if (fileInputRef.current) fileInputRef.current.value = '';
+      setIsArchiveUploading(false);
+      setArchiveUploadProgress({ step: 0, text: '' });
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -381,7 +382,7 @@ export default function App() {
     setTempTags([...tempTags, newTagInput.trim()]); setNewTagInput('');
   };
   const handleRemoveTag = (tagToRemove) => setTempTags(tempTags.filter(t => t !== tagToRemove));
-  
+
   const handleSaveTags = async () => {
     if (!editingTagsItem) return;
     await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'gallery', editingTagsItem.id), { tags: tempTags });
@@ -389,8 +390,8 @@ export default function App() {
   };
 
   const handleDeleteArchive = async (id) => {
-      if(!window.confirm('이 아카이브 사진을 삭제하시겠습니까?')) return;
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'gallery', id));
+    if (!window.confirm('이 아카이브 사진을 삭제하시겠습니까?')) return;
+    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'gallery', id));
   }
 
   const handleAddCategory = async (e) => {
@@ -413,22 +414,32 @@ export default function App() {
   // [Grid 로직] Firestore 연동
   // ==========================================
   const currentGridPosts = allGrids.filter(p => p.account === activeAccount);
-  
+
   const handleDragStart = (e, position) => { dragItem.current = position; };
   const handleDragEnter = (e, position) => { dragOverItem.current = position; };
   const handleDrop = async (e) => {
     e.preventDefault();
-    if(dragItem.current === null || dragOverItem.current === null) return;
-    
+    if (dragItem.current === null || dragOverItem.current === null) return;
+    if (dragItem.current === dragOverItem.current) return;
+
     const copyListItems = [...currentGridPosts];
     const dragItemContent = copyListItems[dragItem.current];
+    const targetItemContent = copyListItems[dragOverItem.current];
+
+    // 고정된 아이템과 고정되지 않은 아이템 간의 위치 변경 방지
+    if (dragItemContent.isPinned !== targetItemContent.isPinned) {
+      setAlertMessage("고정된 게시물과 일반 게시물의 순서를 섞을 수 없습니다.");
+      dragItem.current = null; dragOverItem.current = null;
+      return;
+    }
+
     copyListItems.splice(dragItem.current, 1);
     copyListItems.splice(dragOverItem.current, 0, dragItemContent);
     dragItem.current = null; dragOverItem.current = null;
-    
+
     // DB Order 업데이트
     copyListItems.forEach(async (post, index) => {
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'grids', post.id), { order: index });
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'grids', post.id), { order: index });
     });
   };
 
@@ -439,24 +450,62 @@ export default function App() {
     if (selectedPost) setSelectedPost({ ...selectedPost, images: [...selectedPost.images, ...newImages] });
     else setSelectedPost({ id: Date.now().toString(), images: newImages, caption: '' });
   };
-  
+
   const removeImageFromPost = (idx) => {
-      setSelectedPost(prev => ({ ...prev, images: prev.images.filter((_, i) => i !== idx) }));
+    setSelectedPost(prev => ({ ...prev, images: prev.images.filter((_, i) => i !== idx) }));
   }
 
   const savePost = async () => {
     if (!selectedPost) return;
     try {
-        const postData = { ...selectedPost, account: activeAccount, order: selectedPost.order ?? currentGridPosts.length, updatedAt: serverTimestamp() };
-        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'grids', selectedPost.id), postData);
-        setSelectedPost(null);
-    } catch(err) {
-        setAlertMessage("그리드 저장에 실패했습니다. (용량 초과 가능성)");
+      const isNew = !allGrids.find(p => p.id === selectedPost.id);
+      const pinnedCount = currentGridPosts.filter(p => p.isPinned && p.id !== selectedPost.id).length;
+
+      // 새로 추가하는 경우: 고정된 게시물들 바로 뒤(혹은 0번째)에 추가
+      if (isNew) {
+        const newPostData = { ...selectedPost, account: activeAccount, order: pinnedCount, updatedAt: serverTimestamp() };
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'grids', selectedPost.id), newPostData);
+
+        // 기존의 일반 게시물들(혹은 고정되지 않은 게시물들)의 order를 1씩 밀어냄
+        currentGridPosts.forEach(async (p, idx) => {
+          if (idx >= pinnedCount) {
+            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'grids', p.id), { order: idx + 1 });
+          }
+        });
+      } else {
+        const originalPost = allGrids.find(p => p.id === selectedPost.id);
+        const isPinnedStatusChanged = originalPost && originalPost.isPinned !== selectedPost.isPinned;
+
+        if (isPinnedStatusChanged) {
+          // 리스트에서 현재 수정하는 아이템 제외 후 다시 정렬 준비
+          const otherPosts = currentGridPosts.filter(p => p.id !== selectedPost.id);
+          let newIndex = 0;
+          if (selectedPost.isPinned) {
+            newIndex = 0; // 고정되면 맨 앞으로
+          } else {
+            newIndex = pinnedCount; // 고정 해제되면 고정 리스트 바로 뒤로
+          }
+
+          otherPosts.splice(newIndex, 0, selectedPost);
+
+          // order 전면 재작성 (상태 변경 시에만)
+          otherPosts.forEach(async (post, index) => {
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'grids', post.id), { ...post, order: index }, { merge: true });
+          });
+        } else {
+          // 상태 변경 없으면 그대로 업데이트
+          const postData = { ...selectedPost, account: activeAccount, updatedAt: serverTimestamp() };
+          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'grids', selectedPost.id), postData, { merge: true });
+        }
+      }
+      setSelectedPost(null);
+    } catch (err) {
+      setAlertMessage("그리드 저장에 실패했습니다. (용량 초과 가능성)");
     }
   };
-  
+
   const executeDeletePost = async () => {
-    if(!selectedPost) return;
+    if (!selectedPost) return;
     await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'grids', selectedPost.id));
     setSelectedPost(null); setPostDeleteConfirm(false);
   };
@@ -468,7 +517,7 @@ export default function App() {
     e.preventDefault();
     if (!newAccountName.trim()) return;
     if (accounts.includes(newAccountName.trim())) { setAlertMessage('이미 존재하는 계정 이름입니다.'); return; }
-    
+
     const newName = newAccountName.trim();
     const newAccounts = [...accounts, newName];
     await saveSettingsToDB({ accounts: newAccounts });
@@ -487,7 +536,7 @@ export default function App() {
     setDeleteConfirmAcc(null);
     // 관련 그리드 삭제 로직 (실제 환경에서는 Cloud Functions 권장)
     allGrids.filter(p => p.account === deleteConfirmAcc).forEach(async p => {
-        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'grids', p.id));
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'grids', p.id));
     });
   };
 
@@ -507,7 +556,7 @@ export default function App() {
 
     // 연관 데이터 마이그레이션 (Grid)
     allGrids.filter(p => p.account === oldName).forEach(async p => {
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'grids', p.id), { account: newName });
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'grids', p.id), { account: newName });
     });
     setEditingIgAcc(null);
   };
@@ -532,7 +581,7 @@ export default function App() {
     if (activeThreadAccount === deleteConfirmThreadAcc) setActiveThreadAccount(updated[0]);
     setDeleteConfirmThreadAcc(null);
     threads.filter(t => (t.account || '메인 계정') === deleteConfirmThreadAcc).forEach(async t => {
-        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'threads', t.id));
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'threads', t.id));
     });
   };
 
@@ -552,7 +601,7 @@ export default function App() {
 
     // 연관 데이터 마이그레이션 (Thread)
     threads.filter(t => (t.account || '메인 계정') === oldName).forEach(async t => {
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'threads', t.id), { account: newName });
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'threads', t.id), { account: newName });
     });
     setEditingThreadAcc(null);
   };
@@ -577,7 +626,7 @@ export default function App() {
     if (activeBlogAccount === deleteConfirmBlogAcc) setActiveBlogAccount(updated[0]);
     setDeleteConfirmBlogAcc(null);
     blogs.filter(b => (b.account || '메인 계정') === deleteConfirmBlogAcc).forEach(async b => {
-        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'blogs', b.id));
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'blogs', b.id));
     });
   };
 
@@ -597,7 +646,7 @@ export default function App() {
 
     // 연관 데이터 마이그레이션 (Blog)
     blogs.filter(b => (b.account || '메인 계정') === oldName).forEach(async b => {
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'blogs', b.id), { account: newName });
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'blogs', b.id), { account: newName });
     });
     setEditingBlogAcc(null);
   };
@@ -605,13 +654,13 @@ export default function App() {
   // 구글 드라이브 연동 / 해제 로직 (시뮬레이션)
   const handleDriveConnect = async () => {
     // 실제 환경에서는 여기서 Google OAuth 팝업 호출
-    await new Promise(r => setTimeout(r, 1000)); 
+    await new Promise(r => setTimeout(r, 1000));
     await saveSettingsToDB({ isDriveConnected: true, driveAccount: 'studio.beanute@gmail.com' });
     setAlertMessage('Google Drive 연동이 완료되었습니다.');
   };
 
   const handleDriveDisconnect = async () => {
-    if(!window.confirm('구글 드라이브 연동을 해제하시겠습니까?')) return;
+    if (!window.confirm('구글 드라이브 연동을 해제하시겠습니까?')) return;
     await saveSettingsToDB({ isDriveConnected: false, driveAccount: '' });
     setAlertMessage('Google Drive 연동이 해제되었습니다.');
   };
@@ -625,9 +674,9 @@ export default function App() {
   });
 
   const handleCalendarClick = (dateStr) => {
-    if (!threadDateRange.start || (threadDateRange.start && threadDateRange.end)) { setThreadDateRange({ start: dateStr, end: null }); } 
+    if (!threadDateRange.start || (threadDateRange.start && threadDateRange.end)) { setThreadDateRange({ start: dateStr, end: null }); }
     else {
-      if (dateStr < threadDateRange.start) { setThreadDateRange({ start: dateStr, end: null }); } 
+      if (dateStr < threadDateRange.start) { setThreadDateRange({ start: dateStr, end: null }); }
       else if (dateStr !== threadDateRange.start) { setThreadDateRange({ ...threadDateRange, end: dateStr }); }
     }
   };
@@ -642,7 +691,7 @@ export default function App() {
         const videoUrl = URL.createObjectURL(file);
         newMedia.push({ type: 'video', url: videoUrl, file: file }); // 실제 Storage 도입 필요 영역
       } else if (file.type.startsWith('image/')) {
-        const compressedUrl = await createThumbnail(file); 
+        const compressedUrl = await createThumbnail(file);
         newMedia.push({ type: 'image', url: compressedUrl });
       }
     }
@@ -651,19 +700,19 @@ export default function App() {
 
   const saveThread = async () => {
     if (!threadDraft.text.trim() && threadDraft.media.length === 0) return;
-    
+
     const threadId = activeThreadId === 'new' ? Date.now().toString() : activeThreadId;
     const threadData = { ...threadDraft, account: activeThreadAccount, updatedAt: serverTimestamp() };
-    
+
     try {
-        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'threads', threadId), threadData);
-        setActiveThreadId(threadId);
-        setIsEditingThread(false);
-    } catch(err) { setAlertMessage('저장에 실패했습니다.'); }
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'threads', threadId), threadData);
+      setActiveThreadId(threadId);
+      setIsEditingThread(false);
+    } catch (err) { setAlertMessage('저장에 실패했습니다.'); }
   };
 
   const deleteThread = async (id) => {
-    if(window.confirm('이 쓰레드를 삭제하시겠습니까?')) {
+    if (window.confirm('이 쓰레드를 삭제하시겠습니까?')) {
       await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'threads', id));
       if (activeThreadId === id) setActiveThreadId(null);
     }
@@ -678,9 +727,9 @@ export default function App() {
   });
 
   const handleBlogCalendarClick = (dateStr) => {
-    if (!blogDateRange.start || (blogDateRange.start && blogDateRange.end)) { setBlogDateRange({ start: dateStr, end: null }); } 
+    if (!blogDateRange.start || (blogDateRange.start && blogDateRange.end)) { setBlogDateRange({ start: dateStr, end: null }); }
     else {
-      if (dateStr < blogDateRange.start) { setBlogDateRange({ start: dateStr, end: null }); } 
+      if (dateStr < blogDateRange.start) { setBlogDateRange({ start: dateStr, end: null }); }
       else if (dateStr !== blogDateRange.start) { setBlogDateRange({ ...blogDateRange, end: dateStr }); }
     }
   };
@@ -689,14 +738,14 @@ export default function App() {
     const newBlogDate = blogDateRange.start || toISODate(new Date());
     const newBlogId = Date.now().toString();
     const newBlog = { id: newBlogId, title: '제목 없는 문서', link: '', date: newBlogDate, tags: [], blocks: [], account: activeBlogAccount };
-    
+
     // 로컬 스테이트에 바로 추가 (Save 누르기 전)
     setBlogs([newBlog, ...blogs]);
     setActiveBlogId(newBlogId);
   };
 
   const updateActiveBlogLocally = (updatedBlog) => {
-      setBlogs(blogs.map(b => b.id === updatedBlog.id ? updatedBlog : b));
+    setBlogs(blogs.map(b => b.id === updatedBlog.id ? updatedBlog : b));
   };
 
   const addBlogBlock = (type) => {
@@ -726,19 +775,19 @@ export default function App() {
   };
 
   const saveBlogToDB = async () => {
-      if(!activeBlog || !user) return;
-      try {
-          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'blogs', activeBlog.id), { ...activeBlog, updatedAt: serverTimestamp() });
-          setAlertMessage('문서가 안전하게 저장되었습니다.');
-      } catch (err) {
-          setAlertMessage('저장에 실패했습니다. 텍스트가 너무 길거나 이미지가 큽니다.');
-      }
+    if (!activeBlog || !user) return;
+    try {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'blogs', activeBlog.id), { ...activeBlog, updatedAt: serverTimestamp() });
+      setAlertMessage('문서가 안전하게 저장되었습니다.');
+    } catch (err) {
+      setAlertMessage('저장에 실패했습니다. 텍스트가 너무 길거나 이미지가 큽니다.');
+    }
   }
-  
+
   const deleteActiveBlog = async () => {
-      if(!activeBlog || !window.confirm('이 문서를 데이터베이스에서 영구 삭제할까요?')) return;
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'blogs', activeBlog.id));
-      setActiveBlogId(null);
+    if (!activeBlog || !window.confirm('이 문서를 데이터베이스에서 영구 삭제할까요?')) return;
+    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'blogs', activeBlog.id));
+    setActiveBlogId(null);
   }
 
 
@@ -761,7 +810,7 @@ export default function App() {
   };
 
   const removeSelectedImage = (indexToRemove) => setSelectedImages(prev => prev.filter((_, idx) => idx !== indexToRemove));
-  
+
   const toggleUploadChildTag = (tagId) => setUploadData(prev => {
     const exists = prev.children.find(c => c.id === tagId);
     if (exists) return { ...prev, children: prev.children.filter(c => c.id !== tagId) };
@@ -805,7 +854,7 @@ export default function App() {
         children: editData.children, childrenTags: childrenTags, petCount: editData.petCount, memo: editData.memo,
       });
       setEditData(null);
-    } catch (error) { setAlertMessage("수정 중 오류가 발생했습니다."); } 
+    } catch (error) { setAlertMessage("수정 중 오류가 발생했습니다."); }
     finally { setIsPosingUploading(false); }
   };
 
@@ -826,7 +875,7 @@ export default function App() {
       const childrenTags = uploadData.children.map(c => c.id);
       const commonData = {
         headCount: parseInt(uploadData.headCount), grandparents: uploadData.grandparents, parents: uploadData.parents,
-        children: uploadData.children, childrenTags: childrenTags, petCount: uploadData.petCount, memo: uploadData.memo, 
+        children: uploadData.children, childrenTags: childrenTags, petCount: uploadData.petCount, memo: uploadData.memo,
         isFavorite: false, createdAt: serverTimestamp(),
       };
       // 공용 데이터 저장 경로로 변경 (artifacts/appId/public/data/posing_refs)
@@ -835,12 +884,12 @@ export default function App() {
       setIsPosingUploadModalOpen(false);
       setSelectedImages([]);
       setUploadData({ headCount: 3, grandparents: 'none', parents: 'both', children: [], petCount: 0, memo: '' });
-    } catch (error) { setAlertMessage("일부 이미지 저장에 실패했습니다. (용량 제한 등)"); } 
+    } catch (error) { setAlertMessage("일부 이미지 저장에 실패했습니다. (용량 제한 등)"); }
     finally { setIsPosingUploading(false); }
   };
 
   const handlePosingDelete = async (e, docId) => {
-    e.stopPropagation(); 
+    e.stopPropagation();
     if (!window.confirm('이 레퍼런스를 삭제하시겠습니까?')) return;
     // 공용 데이터 경로에서 삭제
     try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'posing_refs', docId)); if (viewingPhotoId === docId) setViewingPhotoId(null); } catch (e) { console.error(e); }
@@ -862,31 +911,31 @@ export default function App() {
       if (filters.includePets && (!photo.petCount || photo.petCount < 1)) return false;
       if (filters.children.length > 0) {
         const hasMatch = filters.children.every(filterChild => {
-            if (photo.children && typeof photo.children[0] !== 'string') {
-                const match = photo.children.find(pc => pc.id === filterChild.id);
-                return match && match.count === filterChild.count;
-            } else { return (photo.childrenTags || photo.children || []).includes(filterChild.id); }
+          if (photo.children && typeof photo.children[0] !== 'string') {
+            const match = photo.children.find(pc => pc.id === filterChild.id);
+            return match && match.count === filterChild.count;
+          } else { return (photo.childrenTags || photo.children || []).includes(filterChild.id); }
         });
         if (!hasMatch) return false;
       }
       return true;
     });
   }, [photos, filters]);
-  
+
   const activeFilterCount = useMemo(() => {
-      let count = 0;
-      if (filters.onlyFavorites) count++;
-      if (filters.headCount !== 'all') count++;
-      if (filters.grandparents !== 'all') count++;
-      if (filters.parents !== 'all') count++;
-      if (filters.includePets) count++;
-      count += filters.children.length;
-      return count;
+    let count = 0;
+    if (filters.onlyFavorites) count++;
+    if (filters.headCount !== 'all') count++;
+    if (filters.grandparents !== 'all') count++;
+    if (filters.parents !== 'all') count++;
+    if (filters.includePets) count++;
+    count += filters.children.length;
+    return count;
   }, [filters]);
 
   const handleNextPhoto = (e) => { e?.stopPropagation(); if (!viewingPhotoId) return; const idx = filteredPhotos.findIndex(p => p.id === viewingPhotoId); if (idx > -1) setViewingPhotoId(filteredPhotos[(idx + 1) % filteredPhotos.length].id); };
   const handlePrevPhoto = (e) => { e?.stopPropagation(); if (!viewingPhotoId) return; const idx = filteredPhotos.findIndex(p => p.id === viewingPhotoId); if (idx > -1) setViewingPhotoId(filteredPhotos[(idx - 1 + filteredPhotos.length) % filteredPhotos.length].id); };
-  
+
   const touchStart = useRef(null);
   const touchEnd = useRef(null);
   const onTouchStart = (e) => { touchEnd.current = null; touchStart.current = e.targetTouches[0].clientX; };
@@ -900,28 +949,28 @@ export default function App() {
 
   useEffect(() => {
     const handleKeyDown = (e) => {
-        if (!viewingPhotoId) return;
-        if (e.key === 'ArrowRight') handleNextPhoto();
-        if (e.key === 'ArrowLeft') handlePrevPhoto();
-        if (e.key === 'Escape') setViewingPhotoId(null);
+      if (!viewingPhotoId) return;
+      if (e.key === 'ArrowRight') handleNextPhoto();
+      if (e.key === 'ArrowLeft') handlePrevPhoto();
+      if (e.key === 'Escape') setViewingPhotoId(null);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [viewingPhotoId, filteredPhotos]);
 
   const getLabel = (options, value) => options.find(o => o.value === value)?.label || value;
-  
+
   const renderChildTag = (childItem) => {
     if (typeof childItem === 'string') {
-        const label = CHILD_OPTIONS.find(c => c.id === childItem)?.label.split(' ')[0] + ' ' + CHILD_OPTIONS.find(c => c.id === childItem)?.label.split(' ')[1];
-        return <span className="text-[10px] md:text-xs bg-neutral-700 px-1.5 py-0.5 rounded text-neutral-300">{label}</span>;
+      const label = CHILD_OPTIONS.find(c => c.id === childItem)?.label.split(' ')[0] + ' ' + CHILD_OPTIONS.find(c => c.id === childItem)?.label.split(' ')[1];
+      return <span className="text-[10px] md:text-xs bg-neutral-700 px-1.5 py-0.5 rounded text-neutral-300">{label}</span>;
     }
     const label = CHILD_OPTIONS.find(c => c.id === childItem.id)?.label.split(' ')[0] + ' ' + CHILD_OPTIONS.find(c => c.id === childItem.id)?.label.split(' ')[1];
     return (
-        <span className="text-[10px] md:text-xs bg-neutral-700 px-1.5 py-0.5 rounded text-neutral-300 flex items-center gap-1">
-            {label}
-            {childItem.count > 1 && <span className="text-lime-400 font-bold text-[10px] bg-neutral-800 px-1 rounded-full">{childItem.count}</span>}
-        </span>
+      <span className="text-[10px] md:text-xs bg-neutral-700 px-1.5 py-0.5 rounded text-neutral-300 flex items-center gap-1">
+        {label}
+        {childItem.count > 1 && <span className="text-lime-400 font-bold text-[10px] bg-neutral-800 px-1 rounded-full">{childItem.count}</span>}
+      </span>
     );
   };
 
@@ -931,17 +980,17 @@ export default function App() {
   const FilterContentControls = () => (
     <div className="space-y-6">
       <div className="bg-lime-400/5 p-3 rounded-lg border border-lime-400/20">
-        <button onClick={() => setFilters(prev => ({...prev, onlyFavorites: !prev.onlyFavorites}))} className="w-full flex items-center justify-between text-sm">
-            <div className="flex items-center gap-2 text-lime-400 font-medium"><Heart className={`w-4 h-4 ${filters.onlyFavorites ? 'fill-lime-400 text-lime-400' : ''}`} />즐겨찾는 시안만 보기</div>
-            <div className={`w-8 h-4 rounded-full transition-colors relative ${filters.onlyFavorites ? 'bg-lime-400' : 'bg-neutral-700'}`}>
-                <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-neutral-950 rounded-full transition-transform ${filters.onlyFavorites ? 'translate-x-4' : ''}`} />
-            </div>
+        <button onClick={() => setFilters(prev => ({ ...prev, onlyFavorites: !prev.onlyFavorites }))} className="w-full flex items-center justify-between text-sm">
+          <div className="flex items-center gap-2 text-lime-400 font-medium"><Heart className={`w-4 h-4 ${filters.onlyFavorites ? 'fill-lime-400 text-lime-400' : ''}`} />즐겨찾는 시안만 보기</div>
+          <div className={`w-8 h-4 rounded-full transition-colors relative ${filters.onlyFavorites ? 'bg-lime-400' : 'bg-neutral-700'}`}>
+            <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-neutral-950 rounded-full transition-transform ${filters.onlyFavorites ? 'translate-x-4' : ''}`} />
+          </div>
         </button>
       </div>
 
       <div className="space-y-2">
         <label className="text-xs font-bold text-neutral-400 uppercase tracking-wider">총 인원수</label>
-        <select value={filters.headCount} onChange={(e) => setFilters({...filters, headCount: e.target.value})} className="w-full bg-neutral-900 border border-neutral-600 rounded-lg p-2.5 focus:border-lime-500 outline-none text-sm transition-colors">
+        <select value={filters.headCount} onChange={(e) => setFilters({ ...filters, headCount: e.target.value })} className="w-full bg-neutral-900 border border-neutral-600 rounded-lg p-2.5 focus:border-lime-500 outline-none text-sm transition-colors">
           <option value="all">모든 인원</option>
           {[...Array(20)].map((_, i) => (<option key={i} value={i + 1}>{i + 1}인</option>))}
         </select>
@@ -949,7 +998,7 @@ export default function App() {
 
       <div className="space-y-2">
         <label className="text-xs font-bold text-neutral-400 uppercase tracking-wider">조부모 구성</label>
-        <select value={filters.grandparents} onChange={(e) => setFilters({...filters, grandparents: e.target.value})} className="w-full bg-neutral-900 border border-neutral-600 rounded-lg p-2.5 focus:border-lime-500 outline-none text-sm">
+        <select value={filters.grandparents} onChange={(e) => setFilters({ ...filters, grandparents: e.target.value })} className="w-full bg-neutral-900 border border-neutral-600 rounded-lg p-2.5 focus:border-lime-500 outline-none text-sm">
           <option value="all">전체</option>
           {GRANDPARENT_OPTIONS.map(opt => (<option key={opt.value} value={opt.value}>{opt.label}</option>))}
         </select>
@@ -957,7 +1006,7 @@ export default function App() {
 
       <div className="space-y-2">
         <label className="text-xs font-bold text-neutral-400 uppercase tracking-wider">부모 구성</label>
-        <select value={filters.parents} onChange={(e) => setFilters({...filters, parents: e.target.value})} className="w-full bg-neutral-900 border border-neutral-600 rounded-lg p-2.5 focus:border-lime-500 outline-none text-sm">
+        <select value={filters.parents} onChange={(e) => setFilters({ ...filters, parents: e.target.value })} className="w-full bg-neutral-900 border border-neutral-600 rounded-lg p-2.5 focus:border-lime-500 outline-none text-sm">
           <option value="all">전체</option>
           {PARENT_OPTIONS.map(opt => (<option key={opt.value} value={opt.value}>{opt.label}</option>))}
         </select>
@@ -971,23 +1020,23 @@ export default function App() {
             const isSelected = !!selectedItem;
             const count = selectedItem ? selectedItem.count : 0;
             return (
-                <div key={child.id} className={`rounded-lg border transition-all overflow-hidden flex flex-col ${isSelected ? 'bg-lime-400/10 border-lime-400' : 'bg-neutral-900 border-neutral-700 hover:border-neutral-500'}`}>
-                  <button onClick={() => toggleFilterChildTag(child.id)} className={`w-full p-2.5 text-left flex items-center gap-2 ${isSelected ? 'text-white' : 'text-neutral-400'}`}>
-                      <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 ${isSelected ? 'border-lime-400 bg-lime-400' : 'border-neutral-600'}`}>
-                          {isSelected && <Check className="w-3 h-3 text-neutral-950" />}
-                      </div>
-                      <span className="truncate text-sm">{child.label}</span>
-                  </button>
-                  {isSelected && (
-                      <div className="flex items-center justify-between bg-lime-900/30 px-3 py-1.5 border-t border-lime-500/30">
-                          <span className="text-xs text-lime-400 font-semibold">{count}명</span>
-                          <div className="flex items-center gap-1">
-                              <button onClick={(e) => handleFilterChildCountChange(e, child.id, -1)} className="p-1 hover:bg-lime-500/20 rounded text-lime-400" disabled={count <= 1}><Minus className="w-3 h-3" /></button>
-                              <button onClick={(e) => handleFilterChildCountChange(e, child.id, 1)} className="p-1 hover:bg-lime-500/20 rounded text-lime-400"><Plus className="w-3 h-3" /></button>
-                          </div>
-                      </div>
-                  )}
-                </div>
+              <div key={child.id} className={`rounded-lg border transition-all overflow-hidden flex flex-col ${isSelected ? 'bg-lime-400/10 border-lime-400' : 'bg-neutral-900 border-neutral-700 hover:border-neutral-500'}`}>
+                <button onClick={() => toggleFilterChildTag(child.id)} className={`w-full p-2.5 text-left flex items-center gap-2 ${isSelected ? 'text-white' : 'text-neutral-400'}`}>
+                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 ${isSelected ? 'border-lime-400 bg-lime-400' : 'border-neutral-600'}`}>
+                    {isSelected && <Check className="w-3 h-3 text-neutral-950" />}
+                  </div>
+                  <span className="truncate text-sm">{child.label}</span>
+                </button>
+                {isSelected && (
+                  <div className="flex items-center justify-between bg-lime-900/30 px-3 py-1.5 border-t border-lime-500/30">
+                    <span className="text-xs text-lime-400 font-semibold">{count}명</span>
+                    <div className="flex items-center gap-1">
+                      <button onClick={(e) => handleFilterChildCountChange(e, child.id, -1)} className="p-1 hover:bg-lime-500/20 rounded text-lime-400" disabled={count <= 1}><Minus className="w-3 h-3" /></button>
+                      <button onClick={(e) => handleFilterChildCountChange(e, child.id, 1)} className="p-1 hover:bg-lime-500/20 rounded text-lime-400"><Plus className="w-3 h-3" /></button>
+                    </div>
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
@@ -995,12 +1044,12 @@ export default function App() {
 
       <div className="space-y-2">
         <label className="text-xs font-bold text-neutral-400 uppercase tracking-wider">반려동물</label>
-        <button onClick={() => setFilters(prev => ({...prev, includePets: !prev.includePets}))} className={`w-full p-2.5 rounded-lg border flex items-center gap-2 transition-all ${filters.includePets ? 'bg-lime-400/10 border-lime-400 text-white' : 'bg-neutral-900 border-neutral-700 text-neutral-400 hover:border-neutral-500'}`}>
-            <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 ${filters.includePets ? 'border-lime-400 bg-lime-400' : 'border-neutral-600'}`}>
-                {filters.includePets && <Check className="w-3 h-3 text-neutral-950" />}
-            </div>
-            <Dog className="w-4 h-4" />
-            <span className="text-sm">반려견 포함</span>
+        <button onClick={() => setFilters(prev => ({ ...prev, includePets: !prev.includePets }))} className={`w-full p-2.5 rounded-lg border flex items-center gap-2 transition-all ${filters.includePets ? 'bg-lime-400/10 border-lime-400 text-white' : 'bg-neutral-900 border-neutral-700 text-neutral-400 hover:border-neutral-500'}`}>
+          <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 ${filters.includePets ? 'border-lime-400 bg-lime-400' : 'border-neutral-600'}`}>
+            {filters.includePets && <Check className="w-3 h-3 text-neutral-950" />}
+          </div>
+          <Dog className="w-4 h-4" />
+          <span className="text-sm">반려견 포함</span>
         </button>
       </div>
     </div>
@@ -1008,7 +1057,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-neutral-950 text-neutral-200 font-sans selection:bg-lime-500/30 overflow-hidden">
-      
+
       {/* ==========================================
           [좌측] 사이드바 (Sidebar Menu)
           ========================================== */}
@@ -1024,31 +1073,31 @@ export default function App() {
             <Menu size={24} />
           </button>
         </div>
-        
+
         <nav className="flex-1 px-4 space-y-2 mt-4 overflow-y-auto custom-scrollbar">
           {isSidebarOpen ? (
             <div className="text-xs font-semibold text-neutral-500 mb-4 px-2 tracking-wider">WORKSPACE</div>
           ) : (
             <div className="h-6"></div>
           )}
-          
+
           <button onClick={() => setCurrentView('archive')} title={!isSidebarOpen ? 'AI Archive' : ''} className={`w-full flex items-center ${isSidebarOpen ? 'gap-3 px-4 justify-start' : 'justify-center px-0'} py-3 rounded-xl transition-all font-medium ${currentView === 'archive' ? 'bg-lime-400 text-neutral-950 shadow-lg shadow-lime-500/10' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'}`}>
-            <Folder size={20} className="shrink-0" /> 
+            <Folder size={20} className="shrink-0" />
             {isSidebarOpen && <span className="whitespace-nowrap">AI Archive</span>}
           </button>
-          
+
           <button onClick={() => setCurrentView('grid')} title={!isSidebarOpen ? 'IG Grid' : ''} className={`w-full flex items-center ${isSidebarOpen ? 'gap-3 px-4 justify-start' : 'justify-center px-0'} py-3 rounded-xl transition-all font-medium ${currentView === 'grid' ? 'bg-lime-400 text-neutral-950 shadow-lg shadow-lime-500/10' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'}`}>
-            <LayoutGrid size={20} className="shrink-0" /> 
+            <LayoutGrid size={20} className="shrink-0" />
             {isSidebarOpen && <span className="whitespace-nowrap">IG Grid</span>}
           </button>
 
           <button onClick={() => setCurrentView('thread')} title={!isSidebarOpen ? 'Thread' : ''} className={`w-full flex items-center ${isSidebarOpen ? 'gap-3 px-4 justify-start' : 'justify-center px-0'} py-3 rounded-xl transition-all font-medium ${currentView === 'thread' ? 'bg-lime-400 text-neutral-950 shadow-lg shadow-lime-500/10' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'}`}>
-            <MessageCircle size={20} className="shrink-0" /> 
+            <MessageCircle size={20} className="shrink-0" />
             {isSidebarOpen && <span className="whitespace-nowrap">Thread</span>}
           </button>
 
           <button onClick={() => setCurrentView('blog')} title={!isSidebarOpen ? 'Blog' : ''} className={`w-full flex items-center ${isSidebarOpen ? 'gap-3 px-4 justify-start' : 'justify-center px-0'} py-3 rounded-xl transition-all font-medium ${currentView === 'blog' ? 'bg-lime-400 text-neutral-950 shadow-lg shadow-lime-500/10' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'}`}>
-            <FileText size={20} className="shrink-0" /> 
+            <FileText size={20} className="shrink-0" />
             {isSidebarOpen && <span className="whitespace-nowrap">Blog</span>}
           </button>
 
@@ -1057,9 +1106,9 @@ export default function App() {
           ) : (
             <div className="h-6 mt-4"></div>
           )}
-          
+
           <button onClick={() => setCurrentView('posing')} title={!isSidebarOpen ? 'Posing Library' : ''} className={`w-full flex items-center ${isSidebarOpen ? 'gap-3 px-4 justify-start' : 'justify-center px-0'} py-3 rounded-xl transition-all font-medium ${currentView === 'posing' ? 'bg-lime-400 text-neutral-950 shadow-lg shadow-lime-500/10' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'}`}>
-            <Camera size={20} className="shrink-0" /> 
+            <Camera size={20} className="shrink-0" />
             {isSidebarOpen && <span className="whitespace-nowrap">Posing Library</span>}
           </button>
 
@@ -1068,9 +1117,9 @@ export default function App() {
           ) : (
             <div className="h-6 mt-4"></div>
           )}
-          
+
           <button onClick={() => setCurrentView('settings')} title={!isSidebarOpen ? '환경 설정' : ''} className={`w-full flex items-center ${isSidebarOpen ? 'gap-3 px-4 justify-start' : 'justify-center px-0'} py-3 rounded-xl transition-all font-medium ${currentView === 'settings' ? 'bg-neutral-800 text-white border border-neutral-700' : 'text-neutral-500 hover:bg-neutral-800 hover:text-white border border-transparent'}`}>
-            <Settings size={20} className="shrink-0" /> 
+            <Settings size={20} className="shrink-0" />
             {isSidebarOpen && <span className="whitespace-nowrap">환경 설정</span>}
           </button>
         </nav>
@@ -1080,17 +1129,17 @@ export default function App() {
             {isSidebarOpen ? (
               <>
                 <div className="flex items-center gap-2 text-xs text-neutral-400">
-                  <HardDrive size={14} className={isDriveConnected ? "text-lime-400 shrink-0" : "text-neutral-600 shrink-0"}/> 
+                  <HardDrive size={14} className={isDriveConnected ? "text-lime-400 shrink-0" : "text-neutral-600 shrink-0"} />
                   <span className="whitespace-nowrap">{isDriveConnected ? 'Drive 연동됨' : 'Drive 미연동'}</span>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-neutral-400">
-                  <BrainCircuit size={14} className="text-purple-400 shrink-0"/> <span className="whitespace-nowrap">Gemini AI 활성</span>
+                  <BrainCircuit size={14} className="text-purple-400 shrink-0" /> <span className="whitespace-nowrap">Gemini AI 활성</span>
                 </div>
               </>
             ) : (
               <>
-                <HardDrive size={18} className={isDriveConnected ? "text-lime-400 shrink-0" : "text-neutral-600 shrink-0"} title={isDriveConnected ? "Drive 연동됨" : "Drive 미연동"}/>
-                <BrainCircuit size={18} className="text-purple-400 shrink-0" title="Gemini AI 활성"/>
+                <HardDrive size={18} className={isDriveConnected ? "text-lime-400 shrink-0" : "text-neutral-600 shrink-0"} title={isDriveConnected ? "Drive 연동됨" : "Drive 미연동"} />
+                <BrainCircuit size={18} className="text-purple-400 shrink-0" title="Gemini AI 활성" />
               </>
             )}
           </div>
@@ -1102,7 +1151,7 @@ export default function App() {
           ========================================== */}
       <main className="flex-1 overflow-y-auto relative bg-neutral-950">
         <div className={`mx-auto ${currentView === 'blog' || currentView === 'thread' ? 'max-w-7xl' : 'max-w-6xl'} p-4 md:p-8 h-full`}>
-          
+
           {/* --------------------------------------
               View 1: AI Archive
               -------------------------------------- */}
@@ -1126,7 +1175,7 @@ export default function App() {
                       </div>
                       <p className="text-lg font-medium text-neutral-300">클릭하여 사진을 선택하세요 (최대 15MB 원본)</p>
                       <p className="text-sm text-neutral-500 mt-2">썸네일 압축(200KB), AI 자동 태깅, 구글 드라이브 전송이 진행됩니다.</p>
-                      <input type="file" accept="image/*" className="hidden" onChange={handleArchiveUpload} ref={fileInputRef}/>
+                      <input type="file" accept="image/*" className="hidden" onChange={handleArchiveUpload} ref={fileInputRef} />
                     </label>
                   ) : (
                     <div className="border border-neutral-800 bg-neutral-950 rounded-2xl p-8 flex flex-col justify-center">
@@ -1137,7 +1186,7 @@ export default function App() {
                         <span className={archiveUploadProgress.step >= 4 ? "text-lime-400 font-bold" : ""}>4. DB 저장</span>
                       </div>
                       <div className="w-full bg-neutral-800 rounded-full h-3 overflow-hidden mb-6">
-                        <div className="h-full bg-gradient-to-r from-lime-400 to-green-500 transition-all duration-500" style={{ width: `${(archiveUploadProgress.step / 4) * 100}%` }}/>
+                        <div className="h-full bg-gradient-to-r from-lime-400 to-green-500 transition-all duration-500" style={{ width: `${(archiveUploadProgress.step / 4) * 100}%` }} />
                       </div>
                       <div className="flex items-center gap-3 text-white justify-center">
                         <div className="w-5 h-5 border-2 border-lime-400 border-t-transparent rounded-full animate-spin" />
@@ -1175,7 +1224,7 @@ export default function App() {
                           <img src={item.thumbnail} alt="Thumbnail" className="w-full h-auto object-cover bg-neutral-800" />
                           <div className="absolute inset-0 bg-gradient-to-t from-neutral-950/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-between p-4">
                             <a href={item.driveLink} target="_blank" rel="noreferrer" className="flex-1 bg-white/10 hover:bg-white/20 backdrop-blur-sm text-white py-2 rounded-lg font-medium text-sm border border-white/20 flex items-center justify-center gap-2 transition-colors mr-2">
-                                <HardDrive size={16} /> 원본 다운로드 (Drive)
+                              <HardDrive size={16} /> 원본 다운로드 (Drive)
                             </a>
                             <button onClick={() => handleDeleteArchive(item.id)} className="bg-red-500/80 hover:bg-red-600 backdrop-blur-sm text-white p-2 rounded-lg transition-colors"><Trash2 size={16} /></button>
                           </div>
@@ -1208,14 +1257,15 @@ export default function App() {
                   <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                     {accounts.map(acc => (<button key={acc} onClick={() => setActiveAccount(acc)} className={`px-5 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors ${activeAccount === acc ? 'bg-neutral-800 text-lime-400 border border-neutral-700' : 'text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900'}`}>{acc}</button>))}
                   </div>
-                  <button onClick={() => setSelectedPost({ id: Date.now().toString(), images: [], caption: '' })} className="shrink-0 bg-lime-400 text-neutral-950 px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-lime-500 transition-colors ml-4"><Plus size={16} /> 새 게시물</button>
+                  <button onClick={() => setSelectedPost({ id: Date.now().toString(), images: [], caption: '', isPinned: false })} className="shrink-0 bg-lime-400 text-neutral-950 px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-lime-500 transition-colors ml-4"><Plus size={16} /> 새 게시물</button>
                 </div>
               </header>
 
               <div className="w-full max-w-3xl bg-neutral-900 border border-neutral-800 p-1 rounded-xl">
                 <div className="grid grid-cols-3 gap-1">
                   {currentGridPosts.map((post, index) => (
-                    <div key={post.id} draggable onDragStart={(e) => handleDragStart(e, index)} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={handleDrop} onDragOver={(e) => e.preventDefault()} onClick={() => setSelectedPost(post)} className="group relative bg-neutral-800 aspect-[4/5] cursor-grab active:cursor-grabbing hover:opacity-90 transition-opacity overflow-hidden">
+                    <div key={post.id} draggable onDragStart={(e) => handleDragStart(e, index)} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={handleDrop} onDragOver={(e) => e.preventDefault()} onClick={() => setSelectedPost(post)} className="group relative bg-neutral-800 aspect-[4/5] cursor-grab active:cursor-grabbing hover:opacity-90 transition-opacity overflow-hidden border border-transparent">
+                      {post.isPinned && <div className="absolute top-2 left-2 z-10 p-1.5 bg-black/60 rounded-full backdrop-blur-sm shadow-md"><Pin size={14} className="text-white transform fill-white" /></div>}
                       {post.images && post.images.length > 0 ? (<img src={post.images[0]} alt="Post" className="w-full h-full object-cover pointer-events-none" />) : (<div className="w-full h-full flex flex-col items-center justify-center text-neutral-600"><ImageIcon size={32} className="mb-2" /><span className="text-xs font-medium">No Image</span></div>)}
                       {post.images && post.images.length > 1 && (<button onClick={(e) => { e.stopPropagation(); setLightboxPost(post); setCurrentSlideIndex(0); }} className="absolute top-2 right-2 drop-shadow-md z-10 hover:scale-110 transition-transform cursor-pointer group/layer"><Layers size={22} className="text-white fill-white/20 group-hover/layer:text-lime-400 transition-colors" /></button>)}
                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center pointer-events-none transition-opacity"><GripHorizontal size={32} className="text-white drop-shadow-lg" /></div>
@@ -1243,172 +1293,172 @@ export default function App() {
               </header>
 
               <div className="flex-1 flex flex-col md:flex-row gap-6 min-h-0">
-              {/* Left Panel: Calendar & List */}
-              <div className="w-full md:w-[320px] bg-neutral-900 border border-neutral-800 rounded-2xl p-4 flex flex-col shrink-0">
-                
-                {/* Thread Calendar */}
-                <div className="mb-2">
-                  <div className="flex justify-between items-center mb-4 px-2">
-                    <h3 className="font-bold text-sm text-white">
-                      {currentCalendarDate.getFullYear()}년 {currentCalendarDate.getMonth() + 1}월
-                    </h3>
-                    <div className="flex gap-1">
-                      <button onClick={() => setCurrentCalendarDate(new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth() - 1, 1))} className="p-1 bg-neutral-800 rounded hover:bg-neutral-700 text-white"><ChevronLeft size={14}/></button>
-                      <button onClick={() => setCurrentCalendarDate(new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth() + 1, 1))} className="p-1 bg-neutral-800 rounded hover:bg-neutral-700 text-white"><ChevronRight size={14}/></button>
+                {/* Left Panel: Calendar & List */}
+                <div className="w-full md:w-[320px] bg-neutral-900 border border-neutral-800 rounded-2xl p-4 flex flex-col shrink-0">
+
+                  {/* Thread Calendar */}
+                  <div className="mb-2">
+                    <div className="flex justify-between items-center mb-4 px-2">
+                      <h3 className="font-bold text-sm text-white">
+                        {currentCalendarDate.getFullYear()}년 {currentCalendarDate.getMonth() + 1}월
+                      </h3>
+                      <div className="flex gap-1">
+                        <button onClick={() => setCurrentCalendarDate(new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth() - 1, 1))} className="p-1 bg-neutral-800 rounded hover:bg-neutral-700 text-white"><ChevronLeft size={14} /></button>
+                        <button onClick={() => setCurrentCalendarDate(new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth() + 1, 1))} className="p-1 bg-neutral-800 rounded hover:bg-neutral-700 text-white"><ChevronRight size={14} /></button>
+                      </div>
                     </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-7 gap-1 text-center mb-1">
-                    {['일', '월', '화', '수', '목', '금', '토'].map(day => <div key={day} className="text-[10px] font-semibold text-neutral-500">{day}</div>)}
-                  </div>
-                  
-                  <div className="grid grid-cols-7 gap-0.5">
-                    {Array.from({ length: getFirstDayOfMonth(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth()) }).map((_, i) => <div key={`empty-${i}`} />)}
-                    {Array.from({ length: getDaysInMonth(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth()) }).map((_, i) => {
-                      const day = i + 1;
-                      const dateStr = toISODate(new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth(), day));
-                      
-                      const isStart = dateStr === threadDateRange.start;
-                      const isEnd = dateStr === threadDateRange.end;
-                      const isSelected = isStart || isEnd;
-                      const isInRange = threadDateRange.end && dateStr > threadDateRange.start && dateStr < threadDateRange.end;
 
-                      const hasThread = currentAccountThreads.some(t => t.date === dateStr);
-                      const isToday = dateStr === toISODate(new Date());
+                    <div className="grid grid-cols-7 gap-1 text-center mb-1">
+                      {['일', '월', '화', '수', '목', '금', '토'].map(day => <div key={day} className="text-[10px] font-semibold text-neutral-500">{day}</div>)}
+                    </div>
 
-                      return (
-                        <div key={day} className="aspect-square w-full relative p-0.5">
-                          {isInRange && <div className="absolute inset-y-0.5 -inset-x-0 bg-lime-400/20" />}
-                          {isStart && threadDateRange.end && <div className="absolute inset-y-0.5 right-0 w-1/2 bg-lime-400/20" />}
-                          {isEnd && <div className="absolute inset-y-0.5 left-0 w-1/2 bg-lime-400/20" />}
+                    <div className="grid grid-cols-7 gap-0.5">
+                      {Array.from({ length: getFirstDayOfMonth(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth()) }).map((_, i) => <div key={`empty-${i}`} />)}
+                      {Array.from({ length: getDaysInMonth(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth()) }).map((_, i) => {
+                        const day = i + 1;
+                        const dateStr = toISODate(new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth(), day));
 
-                          <button
-                            onClick={() => handleCalendarClick(dateStr)}
-                            className={`
+                        const isStart = dateStr === threadDateRange.start;
+                        const isEnd = dateStr === threadDateRange.end;
+                        const isSelected = isStart || isEnd;
+                        const isInRange = threadDateRange.end && dateStr > threadDateRange.start && dateStr < threadDateRange.end;
+
+                        const hasThread = currentAccountThreads.some(t => t.date === dateStr);
+                        const isToday = dateStr === toISODate(new Date());
+
+                        return (
+                          <div key={day} className="aspect-square w-full relative p-0.5">
+                            {isInRange && <div className="absolute inset-y-0.5 -inset-x-0 bg-lime-400/20" />}
+                            {isStart && threadDateRange.end && <div className="absolute inset-y-0.5 right-0 w-1/2 bg-lime-400/20" />}
+                            {isEnd && <div className="absolute inset-y-0.5 left-0 w-1/2 bg-lime-400/20" />}
+
+                            <button
+                              onClick={() => handleCalendarClick(dateStr)}
+                              className={`
                               w-full h-full flex flex-col items-center justify-center rounded-lg relative text-xs transition-all z-10
                               ${isSelected ? 'bg-lime-400 text-neutral-950 font-bold shadow-md' : isInRange ? 'text-lime-400 font-bold hover:bg-lime-400/30' : 'text-neutral-300 hover:bg-neutral-800'}
                               ${isToday && !isSelected && !isInRange ? 'border border-lime-400/50' : ''}
                             `}
-                          >
-                            <span>{day}</span>
-                            {hasThread && <div className={`w-1 h-1 rounded-full absolute bottom-1 ${isSelected ? 'bg-neutral-950' : 'bg-lime-400'}`} />}
-                          </button>
-                        </div>
-                      );
-                    })}
+                            >
+                              <span>{day}</span>
+                              {hasThread && <div className={`w-1 h-1 rounded-full absolute bottom-1 ${isSelected ? 'bg-neutral-950' : 'bg-lime-400'}`} />}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <hr className="border-neutral-800 my-4" />
+
+                  <div className="flex items-center justify-between mb-4 px-2">
+                    <h3 className="font-bold text-white flex items-center gap-2 text-sm">
+                      <MessageCircle size={16} className="text-lime-400" /> 스레드 ({filteredThreads.length})
+                    </h3>
+                    <button
+                      onClick={() => { setThreadDraft({ text: '', media: [], date: threadDateRange.start || toISODate(new Date()) }); setActiveThreadId('new'); setIsEditingThread(false); }}
+                      className="p-1.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg transition-colors" title="새 스레드 작성"
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </div>
+
+                  <div className="space-y-1 overflow-y-auto flex-1 custom-scrollbar pr-1">
+                    {filteredThreads.length === 0 ? (
+                      <div className="text-center py-8 text-neutral-500 text-xs">선택한 기간에<br />DB에 등록된 스레드가 없습니다.</div>
+                    ) : (
+                      filteredThreads.map(thread => (
+                        <button
+                          key={thread.id}
+                          onClick={() => { setActiveThreadId(thread.id); setIsEditingThread(false); }}
+                          className={`w-full text-left p-3 rounded-xl transition-all flex flex-col gap-1 border border-transparent ${activeThreadId === thread.id ? 'bg-lime-400/10 border-lime-400/20' : 'hover:bg-neutral-800'}`}
+                        >
+                          <div className={`font-medium text-sm line-clamp-2 ${activeThreadId === thread.id ? 'text-lime-400' : 'text-neutral-200'}`}>
+                            {thread.text || '(텍스트 없음)'}
+                          </div>
+                          <div className="text-xs text-neutral-500 flex items-center gap-2 mt-1">
+                            <span>{thread.date}</span>
+                            {thread.media && thread.media.length > 0 && <span className="bg-neutral-800 px-1.5 rounded text-[10px] flex items-center gap-1"><ImageIcon size={10} />{thread.media.length}</span>}
+                          </div>
+                        </button>
+                      ))
+                    )}
                   </div>
                 </div>
 
-                <hr className="border-neutral-800 my-4" />
-
-                <div className="flex items-center justify-between mb-4 px-2">
-                  <h3 className="font-bold text-white flex items-center gap-2 text-sm">
-                    <MessageCircle size={16} className="text-lime-400"/> 스레드 ({filteredThreads.length})
-                  </h3>
-                  <button 
-                    onClick={() => { setThreadDraft({ text: '', media: [], date: threadDateRange.start || toISODate(new Date()) }); setActiveThreadId('new'); setIsEditingThread(false); }} 
-                    className="p-1.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg transition-colors" title="새 스레드 작성"
-                  >
-                    <Plus size={14} />
-                  </button>
-                </div>
-                
-                <div className="space-y-1 overflow-y-auto flex-1 custom-scrollbar pr-1">
-                  {filteredThreads.length === 0 ? (
-                    <div className="text-center py-8 text-neutral-500 text-xs">선택한 기간에<br/>DB에 등록된 스레드가 없습니다.</div>
-                  ) : (
-                    filteredThreads.map(thread => (
-                      <button
-                        key={thread.id}
-                        onClick={() => { setActiveThreadId(thread.id); setIsEditingThread(false); }}
-                        className={`w-full text-left p-3 rounded-xl transition-all flex flex-col gap-1 border border-transparent ${activeThreadId === thread.id ? 'bg-lime-400/10 border-lime-400/20' : 'hover:bg-neutral-800'}`}
-                      >
-                        <div className={`font-medium text-sm line-clamp-2 ${activeThreadId === thread.id ? 'text-lime-400' : 'text-neutral-200'}`}>
-                          {thread.text || '(텍스트 없음)'}
-                        </div>
-                        <div className="text-xs text-neutral-500 flex items-center gap-2 mt-1">
-                          <span>{thread.date}</span>
-                          {thread.media && thread.media.length > 0 && <span className="bg-neutral-800 px-1.5 rounded text-[10px] flex items-center gap-1"><ImageIcon size={10}/>{thread.media.length}</span>}
-                        </div>
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              {/* Right Panel: Detail or Write Form */}
-              <div className="flex-1 bg-neutral-900 border border-neutral-800 rounded-2xl flex flex-col overflow-hidden shadow-2xl relative min-w-0">
-                {activeThreadId === 'new' || isEditingThread ? (
-                  // Write Form
-                  <div className="flex flex-col h-full">
-                    <div className="p-5 md:p-6 border-b border-neutral-800 flex justify-between items-center bg-neutral-900">
-                      <h3 className="text-lg font-bold text-white flex items-center gap-2">{activeThreadId === 'new' ? '새 쓰레드 작성' : '쓰레드 수정'}</h3>
-                      <button onClick={() => { if (activeThreadId === 'new') setActiveThreadId(null); else setIsEditingThread(false); }} className="text-neutral-400 hover:text-white"><X size={20} /></button>
-                    </div>
-                    
-                    <div className="bg-neutral-900 px-5 pt-4 pb-2 md:px-6">
-                        <span className="text-xs text-lime-400 font-medium bg-lime-400/10 px-2 py-0.5 rounded-full inline-block">현재 계정: {activeThreadAccount}</span>
-                    </div>
-
-                    <div className="p-5 md:p-6 space-y-4 flex-1 overflow-y-auto custom-scrollbar bg-neutral-900 flex flex-col pt-2">
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-bold text-neutral-400">발행 예정일:</span>
-                        <input 
-                          type="date" 
-                          value={threadDraft.date} 
-                          onChange={(e) => setThreadDraft({...threadDraft, date: e.target.value})}
-                          className="bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-white text-sm outline-none focus:border-lime-400"
-                        />
+                {/* Right Panel: Detail or Write Form */}
+                <div className="flex-1 bg-neutral-900 border border-neutral-800 rounded-2xl flex flex-col overflow-hidden shadow-2xl relative min-w-0">
+                  {activeThreadId === 'new' || isEditingThread ? (
+                    // Write Form
+                    <div className="flex flex-col h-full">
+                      <div className="p-5 md:p-6 border-b border-neutral-800 flex justify-between items-center bg-neutral-900">
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2">{activeThreadId === 'new' ? '새 쓰레드 작성' : '쓰레드 수정'}</h3>
+                        <button onClick={() => { if (activeThreadId === 'new') setActiveThreadId(null); else setIsEditingThread(false); }} className="text-neutral-400 hover:text-white"><X size={20} /></button>
                       </div>
 
-                      <textarea 
-                        className="w-full min-h-[150px] bg-neutral-950 border border-neutral-800 rounded-xl p-4 text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-lime-500 resize-none font-sans text-sm custom-scrollbar flex-1"
-                        placeholder="어떤 이야기를 공유할까요?"
-                        value={threadDraft.text}
-                        onChange={(e) => setThreadDraft({ ...threadDraft, text: e.target.value })}
-                      />
+                      <div className="bg-neutral-900 px-5 pt-4 pb-2 md:px-6">
+                        <span className="text-xs text-lime-400 font-medium bg-lime-400/10 px-2 py-0.5 rounded-full inline-block">현재 계정: {activeThreadAccount}</span>
+                      </div>
 
-                      {/* Media Preview Area */}
-                      {threadDraft.media.length > 0 && (
-                        <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar shrink-0">
-                          {threadDraft.media.map((m, idx) => (
-                            <div key={idx} className="relative w-24 h-24 shrink-0 rounded-lg overflow-hidden border border-neutral-700">
-                              {m.type === 'image' ? (
-                                <img src={m.url} className="w-full h-full object-cover" alt="preview" />
-                              ) : (
-                                <div className="w-full h-full bg-neutral-800 flex items-center justify-center">
-                                  <Video size={24} className="text-neutral-500" />
-                                </div>
-                              )}
-                              <button onClick={() => setThreadDraft(prev => ({...prev, media: prev.media.filter((_, i) => i !== idx)}))} className="absolute top-1 right-1 bg-black/60 text-white p-1 rounded-full"><X size={12}/></button>
-                            </div>
-                          ))}
+                      <div className="p-5 md:p-6 space-y-4 flex-1 overflow-y-auto custom-scrollbar bg-neutral-900 flex flex-col pt-2">
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-bold text-neutral-400">발행 예정일:</span>
+                          <input
+                            type="date"
+                            value={threadDraft.date}
+                            onChange={(e) => setThreadDraft({ ...threadDraft, date: e.target.value })}
+                            className="bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-white text-sm outline-none focus:border-lime-400"
+                          />
                         </div>
-                      )}
 
-                      <label className="flex items-center justify-center gap-2 w-full py-6 border-2 border-dashed border-neutral-700 rounded-xl cursor-pointer hover:border-lime-400 text-neutral-400 hover:text-lime-400 transition-colors bg-neutral-950 shrink-0">
-                        <ImageIcon size={20} /> <Video size={20} />
-                        <span className="text-sm font-medium">사진 또는 영상 첨부 (최대 15MB)</span>
-                        <input type="file" accept="image/*, video/*" multiple className="hidden" onChange={handleThreadMediaUpload}/>
-                      </label>
-                    </div>
+                        <textarea
+                          className="w-full min-h-[150px] bg-neutral-950 border border-neutral-800 rounded-xl p-4 text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-lime-500 resize-none font-sans text-sm custom-scrollbar flex-1"
+                          placeholder="어떤 이야기를 공유할까요?"
+                          value={threadDraft.text}
+                          onChange={(e) => setThreadDraft({ ...threadDraft, text: e.target.value })}
+                        />
 
-                    <div className="p-4 border-t border-neutral-800 flex justify-end bg-neutral-900 shrink-0">
-                      <button onClick={saveThread} className="bg-lime-400 hover:bg-lime-500 text-neutral-950 px-6 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-lime-500/20 transition-all">
-                        저장하기
-                      </button>
+                        {/* Media Preview Area */}
+                        {threadDraft.media.length > 0 && (
+                          <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar shrink-0">
+                            {threadDraft.media.map((m, idx) => (
+                              <div key={idx} className="relative w-24 h-24 shrink-0 rounded-lg overflow-hidden border border-neutral-700">
+                                {m.type === 'image' ? (
+                                  <img src={m.url} className="w-full h-full object-cover" alt="preview" />
+                                ) : (
+                                  <div className="w-full h-full bg-neutral-800 flex items-center justify-center">
+                                    <Video size={24} className="text-neutral-500" />
+                                  </div>
+                                )}
+                                <button onClick={() => setThreadDraft(prev => ({ ...prev, media: prev.media.filter((_, i) => i !== idx) }))} className="absolute top-1 right-1 bg-black/60 text-white p-1 rounded-full"><X size={12} /></button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <label className="flex items-center justify-center gap-2 w-full py-6 border-2 border-dashed border-neutral-700 rounded-xl cursor-pointer hover:border-lime-400 text-neutral-400 hover:text-lime-400 transition-colors bg-neutral-950 shrink-0">
+                          <ImageIcon size={20} /> <Video size={20} />
+                          <span className="text-sm font-medium">사진 또는 영상 첨부 (최대 15MB)</span>
+                          <input type="file" accept="image/*, video/*" multiple className="hidden" onChange={handleThreadMediaUpload} />
+                        </label>
+                      </div>
+
+                      <div className="p-4 border-t border-neutral-800 flex justify-end bg-neutral-900 shrink-0">
+                        <button onClick={saveThread} className="bg-lime-400 hover:bg-lime-500 text-neutral-950 px-6 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-lime-500/20 transition-all">
+                          저장하기
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ) : activeThreadId && selectedThread ? (
-                  // Detail View
-                  <div className="flex flex-col h-full bg-neutral-900">
-                    <div className="p-5 md:p-6 border-b border-neutral-800 flex justify-between items-center">
-                      <h3 className="text-lg font-bold text-white flex items-center gap-2">스레드 미리보기</h3>
-                      <button onClick={() => setActiveThreadId(null)} className="text-neutral-400 hover:text-white"><X size={20} /></button>
-                    </div>
-                    <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
-                        
-                       <div className="flex items-center justify-between mb-6 border-b border-neutral-800 pb-4">
+                  ) : activeThreadId && selectedThread ? (
+                    // Detail View
+                    <div className="flex flex-col h-full bg-neutral-900">
+                      <div className="p-5 md:p-6 border-b border-neutral-800 flex justify-between items-center">
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2">스레드 미리보기</h3>
+                        <button onClick={() => setActiveThreadId(null)} className="text-neutral-400 hover:text-white"><X size={20} /></button>
+                      </div>
+                      <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
+
+                        <div className="flex items-center justify-between mb-6 border-b border-neutral-800 pb-4">
                           <div className="flex items-center gap-3">
                             <div className="w-12 h-12 bg-neutral-800 rounded-full flex items-center justify-center">
                               <span className="text-lime-400 font-bold text-lg">B</span>
@@ -1426,52 +1476,52 @@ export default function App() {
                               <Trash2 size={16} />
                             </button>
                           </div>
-                       </div>
-                       
-                       <div className="pl-0 md:pl-14">
-                           <p className="text-sm text-neutral-200 whitespace-pre-wrap leading-relaxed mb-6">
-                             {selectedThread.text}
-                           </p>
+                        </div>
 
-                           {selectedThread.media && selectedThread.media.length > 0 && (
-                             <div className={`grid gap-2 mb-2 ${selectedThread.media.length === 1 ? 'grid-cols-1 max-w-md' : 'grid-cols-2 max-w-xl'}`}>
-                                {selectedThread.media.map((m, idx) => (
-                                  <div 
-                                    key={idx} 
-                                    className={`relative rounded-xl overflow-hidden border border-neutral-800 bg-neutral-950 cursor-pointer ${selectedThread.media.length === 1 ? '' : 'aspect-square'}`}
-                                    onClick={() => setThreadLightboxMedia(m)}
-                                  >
-                                    {m.type === 'image' ? (
-                                      <img src={m.url} alt="media" className="w-full h-full object-cover" />
-                                    ) : (
-                                      <div className="w-full h-full flex items-center justify-center relative">
-                                        <video src={m.url} className="w-full h-full object-cover opacity-50" />
-                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                          <Video size={32} className="text-white drop-shadow-md" />
-                                        </div>
+                        <div className="pl-0 md:pl-14">
+                          <p className="text-sm text-neutral-200 whitespace-pre-wrap leading-relaxed mb-6">
+                            {selectedThread.text}
+                          </p>
+
+                          {selectedThread.media && selectedThread.media.length > 0 && (
+                            <div className={`grid gap-2 mb-2 ${selectedThread.media.length === 1 ? 'grid-cols-1 max-w-md' : 'grid-cols-2 max-w-xl'}`}>
+                              {selectedThread.media.map((m, idx) => (
+                                <div
+                                  key={idx}
+                                  className={`relative rounded-xl overflow-hidden border border-neutral-800 bg-neutral-950 cursor-pointer ${selectedThread.media.length === 1 ? '' : 'aspect-square'}`}
+                                  onClick={() => setThreadLightboxMedia(m)}
+                                >
+                                  {m.type === 'image' ? (
+                                    <img src={m.url} alt="media" className="w-full h-full object-cover" />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center relative">
+                                      <video src={m.url} className="w-full h-full object-cover opacity-50" />
+                                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                        <Video size={32} className="text-white drop-shadow-md" />
                                       </div>
-                                    )}
-                                  </div>
-                                ))}
-                             </div>
-                           )}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
 
-                           <div className="flex gap-4 mt-6 text-neutral-500 border-t border-neutral-800 pt-4">
-                              <Heart size={20} className="cursor-pointer hover:text-red-400 transition-colors" />
-                              <MessageCircle size={20} className="cursor-pointer hover:text-white transition-colors" />
-                              <GripHorizontal size={20} className="cursor-pointer hover:text-white transition-colors" />
-                           </div>
-                       </div>
+                          <div className="flex gap-4 mt-6 text-neutral-500 border-t border-neutral-800 pt-4">
+                            <Heart size={20} className="cursor-pointer hover:text-red-400 transition-colors" />
+                            <MessageCircle size={20} className="cursor-pointer hover:text-white transition-colors" />
+                            <GripHorizontal size={20} className="cursor-pointer hover:text-white transition-colors" />
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  // Empty State
-                  <div className="flex flex-col items-center justify-center h-full text-neutral-500 p-6 text-center">
-                     <MessageCircle size={48} className="mb-4 text-neutral-700"/>
-                     <p>왼쪽 패널에서 스레드를 선택하거나<br/>새 스레드를 작성하세요.</p>
-                  </div>
-                )}
-              </div>
+                  ) : (
+                    // Empty State
+                    <div className="flex flex-col items-center justify-center h-full text-neutral-500 p-6 text-center">
+                      <MessageCircle size={48} className="mb-4 text-neutral-700" />
+                      <p>왼쪽 패널에서 스레드를 선택하거나<br />새 스레드를 작성하세요.</p>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -1492,356 +1542,357 @@ export default function App() {
               </header>
 
               <div className="flex-1 flex flex-col md:flex-row gap-6 min-h-0">
-              {/* Blog List Panel */}
-              <div className="w-full md:w-[320px] bg-neutral-900 border border-neutral-800 rounded-2xl p-4 flex flex-col shrink-0">
-                
-                {/* Blog Calendar */}
-                <div className="mb-2">
-                  <div className="flex justify-between items-center mb-4 px-2">
-                    <h3 className="font-bold text-sm text-white">
-                      {blogCalendarDate.getFullYear()}년 {blogCalendarDate.getMonth() + 1}월
-                    </h3>
-                    <div className="flex gap-1">
-                      <button onClick={() => setBlogCalendarDate(new Date(blogCalendarDate.getFullYear(), blogCalendarDate.getMonth() - 1, 1))} className="p-1 bg-neutral-800 rounded hover:bg-neutral-700 text-white"><ChevronLeft size={14}/></button>
-                      <button onClick={() => setBlogCalendarDate(new Date(blogCalendarDate.getFullYear(), blogCalendarDate.getMonth() + 1, 1))} className="p-1 bg-neutral-800 rounded hover:bg-neutral-700 text-white"><ChevronRight size={14}/></button>
+                {/* Blog List Panel */}
+                <div className="w-full md:w-[320px] bg-neutral-900 border border-neutral-800 rounded-2xl p-4 flex flex-col shrink-0">
+
+                  {/* Blog Calendar */}
+                  <div className="mb-2">
+                    <div className="flex justify-between items-center mb-4 px-2">
+                      <h3 className="font-bold text-sm text-white">
+                        {blogCalendarDate.getFullYear()}년 {blogCalendarDate.getMonth() + 1}월
+                      </h3>
+                      <div className="flex gap-1">
+                        <button onClick={() => setBlogCalendarDate(new Date(blogCalendarDate.getFullYear(), blogCalendarDate.getMonth() - 1, 1))} className="p-1 bg-neutral-800 rounded hover:bg-neutral-700 text-white"><ChevronLeft size={14} /></button>
+                        <button onClick={() => setBlogCalendarDate(new Date(blogCalendarDate.getFullYear(), blogCalendarDate.getMonth() + 1, 1))} className="p-1 bg-neutral-800 rounded hover:bg-neutral-700 text-white"><ChevronRight size={14} /></button>
+                      </div>
                     </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-7 gap-1 text-center mb-1">
-                    {['일', '월', '화', '수', '목', '금', '토'].map(day => <div key={day} className="text-[10px] font-semibold text-neutral-500">{day}</div>)}
-                  </div>
-                  
-                  <div className="grid grid-cols-7 gap-0.5">
-                    {Array.from({ length: getFirstDayOfMonth(blogCalendarDate.getFullYear(), blogCalendarDate.getMonth()) }).map((_, i) => <div key={`empty-${i}`} />)}
-                    {Array.from({ length: getDaysInMonth(blogCalendarDate.getFullYear(), blogCalendarDate.getMonth()) }).map((_, i) => {
-                      const day = i + 1;
-                      const dateStr = toISODate(new Date(blogCalendarDate.getFullYear(), blogCalendarDate.getMonth(), day));
-                      
-                      const isStart = dateStr === blogDateRange.start;
-                      const isEnd = dateStr === blogDateRange.end;
-                      const isSelected = isStart || isEnd;
-                      const isInRange = blogDateRange.end && dateStr > blogDateRange.start && dateStr < blogDateRange.end;
 
-                      const hasBlog = currentAccountBlogs.some(b => b.date === dateStr);
-                      const isToday = dateStr === toISODate(new Date());
+                    <div className="grid grid-cols-7 gap-1 text-center mb-1">
+                      {['일', '월', '화', '수', '목', '금', '토'].map(day => <div key={day} className="text-[10px] font-semibold text-neutral-500">{day}</div>)}
+                    </div>
 
-                      return (
-                        <div key={day} className="aspect-square w-full relative p-0.5">
-                          {isInRange && <div className="absolute inset-y-0.5 -inset-x-0 bg-lime-400/20" />}
-                          {isStart && blogDateRange.end && <div className="absolute inset-y-0.5 right-0 w-1/2 bg-lime-400/20" />}
-                          {isEnd && <div className="absolute inset-y-0.5 left-0 w-1/2 bg-lime-400/20" />}
+                    <div className="grid grid-cols-7 gap-0.5">
+                      {Array.from({ length: getFirstDayOfMonth(blogCalendarDate.getFullYear(), blogCalendarDate.getMonth()) }).map((_, i) => <div key={`empty-${i}`} />)}
+                      {Array.from({ length: getDaysInMonth(blogCalendarDate.getFullYear(), blogCalendarDate.getMonth()) }).map((_, i) => {
+                        const day = i + 1;
+                        const dateStr = toISODate(new Date(blogCalendarDate.getFullYear(), blogCalendarDate.getMonth(), day));
 
-                          <button
-                            onClick={() => handleBlogCalendarClick(dateStr)}
-                            className={`
+                        const isStart = dateStr === blogDateRange.start;
+                        const isEnd = dateStr === blogDateRange.end;
+                        const isSelected = isStart || isEnd;
+                        const isInRange = blogDateRange.end && dateStr > blogDateRange.start && dateStr < blogDateRange.end;
+
+                        const hasBlog = currentAccountBlogs.some(b => b.date === dateStr);
+                        const isToday = dateStr === toISODate(new Date());
+
+                        return (
+                          <div key={day} className="aspect-square w-full relative p-0.5">
+                            {isInRange && <div className="absolute inset-y-0.5 -inset-x-0 bg-lime-400/20" />}
+                            {isStart && blogDateRange.end && <div className="absolute inset-y-0.5 right-0 w-1/2 bg-lime-400/20" />}
+                            {isEnd && <div className="absolute inset-y-0.5 left-0 w-1/2 bg-lime-400/20" />}
+
+                            <button
+                              onClick={() => handleBlogCalendarClick(dateStr)}
+                              className={`
                               w-full h-full flex flex-col items-center justify-center rounded-lg relative text-xs transition-all z-10
                               ${isSelected ? 'bg-lime-400 text-neutral-950 font-bold shadow-md' : isInRange ? 'text-lime-400 font-bold hover:bg-lime-400/30' : 'text-neutral-300 hover:bg-neutral-800'}
                               ${isToday && !isSelected && !isInRange ? 'border border-lime-400/50' : ''}
                             `}
-                          >
-                            <span>{day}</span>
-                            {hasBlog && <div className={`w-1 h-1 rounded-full absolute bottom-1 ${isSelected ? 'bg-neutral-950' : 'bg-lime-400'}`} />}
-                          </button>
-                        </div>
-                      );
-                    })}
+                            >
+                              <span>{day}</span>
+                              {hasBlog && <div className={`w-1 h-1 rounded-full absolute bottom-1 ${isSelected ? 'bg-neutral-950' : 'bg-lime-400'}`} />}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <hr className="border-neutral-800 my-4" />
+
+                  <div className="flex items-center justify-between mb-4 px-2">
+                    <h3 className="font-bold text-white flex items-center gap-2 text-sm">
+                      <FileText size={16} className="text-lime-400" /> 문서 ({filteredBlogs.length})
+                    </h3>
+                    <button onClick={createNewBlog} className="p-1.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg transition-colors" title="선택한 날짜에 새 문서 추가">
+                      <Plus size={14} />
+                    </button>
+                  </div>
+
+                  <div className="space-y-1 overflow-y-auto flex-1 custom-scrollbar">
+                    {filteredBlogs.length === 0 ? (
+                      <div className="text-center py-8 text-neutral-500 text-xs">선택한 기간에<br />DB에 작성된 문서가 없습니다.</div>
+                    ) : (
+                      filteredBlogs.map(blog => (
+                        <button
+                          key={blog.id}
+                          onClick={() => setActiveBlogId(blog.id)}
+                          className={`w-full text-left p-3 rounded-xl transition-all flex flex-col gap-1 border border-transparent ${activeBlogId === blog.id ? 'bg-lime-400/10 border-lime-400/20' : 'hover:bg-neutral-800'}`}
+                        >
+                          <div className={`font-medium text-sm truncate ${activeBlogId === blog.id ? 'text-lime-400' : 'text-neutral-200'}`}>
+                            {blog.title || '제목 없음'}
+                          </div>
+                          <div className="text-xs text-neutral-500 flex items-center gap-2">
+                            <span>{blog.date}</span>
+                            {blog.tags && blog.tags.length > 0 && <span className="bg-neutral-800 px-1.5 rounded text-[10px]">{blog.tags[0]}</span>}
+                          </div>
+                        </button>
+                      ))
+                    )}
                   </div>
                 </div>
 
-                <hr className="border-neutral-800 my-4" />
+                {/* Blog Editor Panel */}
+                {activeBlog ? (
+                  <div className="flex-1 bg-white rounded-2xl flex flex-col overflow-hidden shadow-2xl relative min-w-0">
+                    <div className="p-6 md:p-10 overflow-y-auto flex-1 custom-scrollbar text-neutral-900">
 
-                <div className="flex items-center justify-between mb-4 px-2">
-                  <h3 className="font-bold text-white flex items-center gap-2 text-sm">
-                    <FileText size={16} className="text-lime-400"/> 문서 ({filteredBlogs.length})
-                  </h3>
-                  <button onClick={createNewBlog} className="p-1.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg transition-colors" title="선택한 날짜에 새 문서 추가">
-                    <Plus size={14} />
-                  </button>
-                </div>
-                
-                <div className="space-y-1 overflow-y-auto flex-1 custom-scrollbar">
-                  {filteredBlogs.length === 0 ? (
-                    <div className="text-center py-8 text-neutral-500 text-xs">선택한 기간에<br/>DB에 작성된 문서가 없습니다.</div>
-                  ) : (
-                    filteredBlogs.map(blog => (
-                      <button
-                        key={blog.id}
-                        onClick={() => setActiveBlogId(blog.id)}
-                        className={`w-full text-left p-3 rounded-xl transition-all flex flex-col gap-1 border border-transparent ${activeBlogId === blog.id ? 'bg-lime-400/10 border-lime-400/20' : 'hover:bg-neutral-800'}`}
-                      >
-                        <div className={`font-medium text-sm truncate ${activeBlogId === blog.id ? 'text-lime-400' : 'text-neutral-200'}`}>
-                          {blog.title || '제목 없음'}
+                      {/* Header Area */}
+                      <div className="border border-blue-200 rounded-xl p-6 bg-blue-50/30 mb-8 space-y-4 relative">
+                        <button onClick={deleteActiveBlog} className="absolute top-4 right-4 text-red-400 hover:bg-red-50 p-2 rounded-lg transition-colors" title="문서 삭제"><Trash2 size={18} /></button>
+                        <div className="mb-2">
+                          <span className="text-xs text-blue-600 font-bold bg-blue-100 px-2 py-1 rounded-full">계정: {activeBlogAccount}</span>
                         </div>
-                        <div className="text-xs text-neutral-500 flex items-center gap-2">
-                          <span>{blog.date}</span>
-                          {blog.tags && blog.tags.length > 0 && <span className="bg-neutral-800 px-1.5 rounded text-[10px]">{blog.tags[0]}</span>}
+                        <input
+                          type="text"
+                          value={activeBlog.title || ''}
+                          onChange={(e) => updateActiveBlogLocally({ ...activeBlog, title: e.target.value })}
+                          className="w-full text-2xl font-bold bg-transparent border-none outline-none placeholder-neutral-400"
+                          placeholder="제목을 입력하세요"
+                        />
+
+                        <div className="flex flex-col sm:flex-row gap-4 text-sm">
+                          <div className="flex-1 flex items-center border border-neutral-200 rounded-lg overflow-hidden bg-white">
+                            <span className="px-3 text-blue-500 bg-blue-50 border-r border-neutral-200 font-medium">외부링크</span>
+                            <input
+                              type="text"
+                              value={activeBlog.link || ''}
+                              onChange={(e) => updateActiveBlogLocally({ ...activeBlog, link: e.target.value })}
+                              className="flex-1 p-2 outline-none"
+                              placeholder="(선택) 외부 블로그 원문 링크"
+                            />
+                          </div>
+                          <div className="w-full sm:w-48 flex items-center border border-neutral-200 rounded-lg overflow-hidden bg-white">
+                            <span className="px-3 text-neutral-500 bg-neutral-50 border-r border-neutral-200 font-medium">날짜</span>
+                            <input
+                              type="date"
+                              value={activeBlog.date || ''}
+                              onChange={(e) => updateActiveBlogLocally({ ...activeBlog, date: e.target.value })}
+                              className="flex-1 p-2 outline-none text-neutral-600"
+                            />
+                          </div>
                         </div>
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
 
-              {/* Blog Editor Panel */}
-              {activeBlog ? (
-                <div className="flex-1 bg-white rounded-2xl flex flex-col overflow-hidden shadow-2xl relative min-w-0">
-                  <div className="p-6 md:p-10 overflow-y-auto flex-1 custom-scrollbar text-neutral-900">
-                    
-                    {/* Header Area */}
-                    <div className="border border-blue-200 rounded-xl p-6 bg-blue-50/30 mb-8 space-y-4 relative">
-                       <button onClick={deleteActiveBlog} className="absolute top-4 right-4 text-red-400 hover:bg-red-50 p-2 rounded-lg transition-colors" title="문서 삭제"><Trash2 size={18}/></button>
-                       <div className="mb-2">
-                           <span className="text-xs text-blue-600 font-bold bg-blue-100 px-2 py-1 rounded-full">계정: {activeBlogAccount}</span>
-                       </div>
-                       <input 
-                         type="text" 
-                         value={activeBlog.title || ''} 
-                         onChange={(e) => updateActiveBlogLocally({...activeBlog, title: e.target.value})}
-                         className="w-full text-2xl font-bold bg-transparent border-none outline-none placeholder-neutral-400"
-                         placeholder="제목을 입력하세요"
-                       />
-                       
-                       <div className="flex flex-col sm:flex-row gap-4 text-sm">
-                         <div className="flex-1 flex items-center border border-neutral-200 rounded-lg overflow-hidden bg-white">
-                           <span className="px-3 text-blue-500 bg-blue-50 border-r border-neutral-200 font-medium">외부링크</span>
-                           <input 
-                             type="text" 
-                             value={activeBlog.link || ''}
-                             onChange={(e) => updateActiveBlogLocally({...activeBlog, link: e.target.value})}
-                             className="flex-1 p-2 outline-none" 
-                             placeholder="(선택) 외부 블로그 원문 링크"
-                           />
-                         </div>
-                         <div className="w-full sm:w-48 flex items-center border border-neutral-200 rounded-lg overflow-hidden bg-white">
-                           <span className="px-3 text-neutral-500 bg-neutral-50 border-r border-neutral-200 font-medium">날짜</span>
-                           <input 
-                             type="date" 
-                             value={activeBlog.date || ''}
-                             onChange={(e) => updateActiveBlogLocally({...activeBlog, date: e.target.value})}
-                             className="flex-1 p-2 outline-none text-neutral-600" 
-                           />
-                         </div>
-                       </div>
-
-                       <div className="flex items-start gap-3 pt-2">
-                         <span className="text-sm font-bold text-neutral-500 mt-1">태그</span>
-                         <div className="flex-1 border border-neutral-200 rounded-lg p-3 bg-white flex flex-col gap-2">
-                           <div className="flex flex-wrap gap-1">
-                             {(activeBlog.tags || []).map(tag => (
-                               <span key={tag} className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
-                                 {tag} <button onClick={() => updateActiveBlogLocally({...activeBlog, tags: activeBlog.tags.filter(t=>t!==tag)})}><X size={10}/></button>
-                               </span>
-                             ))}
-                           </div>
-                           <div className="flex items-center gap-2">
-                              <input 
-                                type="text" 
+                        <div className="flex items-start gap-3 pt-2">
+                          <span className="text-sm font-bold text-neutral-500 mt-1">태그</span>
+                          <div className="flex-1 border border-neutral-200 rounded-lg p-3 bg-white flex flex-col gap-2">
+                            <div className="flex flex-wrap gap-1">
+                              {(activeBlog.tags || []).map(tag => (
+                                <span key={tag} className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
+                                  {tag} <button onClick={() => updateActiveBlogLocally({ ...activeBlog, tags: activeBlog.tags.filter(t => t !== tag) })}><X size={10} /></button>
+                                </span>
+                              ))}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
                                 id={`tag-input-${activeBlogId}`}
-                                placeholder="태그명 입력 후 엔터" 
+                                placeholder="태그명 입력 후 엔터"
                                 className="flex-1 text-sm outline-none bg-transparent"
                                 onKeyDown={(e) => {
-                                  if(e.key === 'Enter' && e.target.value.trim()) {
+                                  if (e.key === 'Enter' && e.target.value.trim()) {
                                     const val = e.target.value.trim();
                                     const tags = activeBlog.tags || [];
-                                    if(!tags.includes(val)) updateActiveBlogLocally({...activeBlog, tags: [...tags, val]});
+                                    if (!tags.includes(val)) updateActiveBlogLocally({ ...activeBlog, tags: [...tags, val] });
                                     e.target.value = '';
                                   }
                                 }}
                               />
-                           </div>
-                         </div>
-                       </div>
-                    </div>
-
-                    {/* Blocks Area */}
-                    <div className="bg-neutral-50 rounded-xl p-4 md:p-6 min-h-[400px]">
-                      <h4 className="text-sm font-bold text-blue-500 mb-4 flex items-center gap-2">
-                        <LayoutGrid size={16} /> 본문 블록 에디터
-                      </h4>
-
-                      <div className="space-y-4 mb-8">
-                        {(activeBlog.blocks || []).map((block, index) => {
-                          const currentAlign = block.align || (['ul', 'ol', 'callout'].includes(block.type) ? 'left' : 'center');
-                          
-                          return (
-                          <div key={block.id} className="group relative border border-neutral-200 bg-white rounded-xl p-4 shadow-sm hover:border-blue-300 transition-colors">
-                            {/* Block Controls */}
-                            <div className="flex items-center justify-between mb-3">
-                              <div className="flex items-center gap-2">
-                                <span className="bg-neutral-800 text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">{block.type.toUpperCase()}</span>
-                                <div className="flex items-center gap-1 bg-neutral-50 border border-neutral-200 rounded p-0.5">
-                                  <button onClick={() => updateBlogBlock(block.id, 'align', 'left')} className={`p-1.5 rounded transition-colors ${currentAlign === 'left' ? 'bg-white shadow-sm text-blue-500' : 'text-neutral-400 hover:bg-neutral-200'}`}><AlignLeft size={12} /></button>
-                                  <button onClick={() => updateBlogBlock(block.id, 'align', 'center')} className={`p-1.5 rounded transition-colors ${currentAlign === 'center' ? 'bg-white shadow-sm text-blue-500' : 'text-neutral-400 hover:bg-neutral-200'}`}><AlignCenter size={12} /></button>
-                                  <button onClick={() => updateBlogBlock(block.id, 'align', 'right')} className={`p-1.5 rounded transition-colors ${currentAlign === 'right' ? 'bg-white shadow-sm text-blue-500' : 'text-neutral-400 hover:bg-neutral-200'}`}><AlignRight size={12} /></button>
-                                </div>
-                              </div>
-                              <button onClick={() => removeBlogBlock(block.id)} className="text-neutral-400 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity"><X size={14} /></button>
                             </div>
-
-                            {/* Block Content Render */}
-                            {block.type === 'h1' && (
-                              <input type="text" value={block.content || ''} onChange={(e) => updateBlogBlock(block.id, 'content', e.target.value)} className={`w-full text-2xl font-black border-none outline-none placeholder-neutral-300 ${currentAlign === 'center' ? 'text-center' : currentAlign === 'right' ? 'text-right' : 'text-left'}`} placeholder="제목 1 (대제목)을 입력하세요" />
-                            )}
-                            {block.type === 'h2' && (
-                              <input type="text" value={block.content || ''} onChange={(e) => updateBlogBlock(block.id, 'content', e.target.value)} className={`w-full text-xl font-bold border-none outline-none placeholder-neutral-300 ${currentAlign === 'center' ? 'text-center' : currentAlign === 'right' ? 'text-right' : 'text-left'}`} placeholder="제목 2 (중제목)을 입력하세요" />
-                            )}
-                            {block.type === 'text' && (
-                              <textarea value={block.content || ''} onChange={(e) => updateBlogBlock(block.id, 'content', e.target.value)} className={`w-full text-sm leading-relaxed border-none outline-none resize-none placeholder-neutral-300 min-h-[60px] ${currentAlign === 'center' ? 'text-center' : currentAlign === 'right' ? 'text-right' : 'text-left'} custom-scrollbar`} placeholder="본문 내용을 입력하세요" />
-                            )}
-                            {block.type === 'ul' && (
-                              <div className="flex items-start gap-2 px-4 md:px-8">
-                                <span className="text-xl leading-none pt-0.5 text-neutral-400">•</span>
-                                <textarea value={block.content || ''} onChange={(e) => updateBlogBlock(block.id, 'content', e.target.value)} className={`flex-1 text-sm leading-relaxed border-none outline-none resize-none placeholder-neutral-300 min-h-[40px] ${currentAlign === 'center' ? 'text-center' : currentAlign === 'right' ? 'text-right' : 'text-left'} custom-scrollbar`} placeholder="글머리 기호 목록 내용을 입력하세요" />
-                              </div>
-                            )}
-                            {block.type === 'ol' && (
-                              <div className="flex items-start gap-2 px-4 md:px-8">
-                                <span className="text-sm font-bold pt-1 text-neutral-400">1.</span>
-                                <textarea value={block.content || ''} onChange={(e) => updateBlogBlock(block.id, 'content', e.target.value)} className={`flex-1 text-sm leading-relaxed border-none outline-none resize-none placeholder-neutral-300 min-h-[40px] ${currentAlign === 'center' ? 'text-center' : currentAlign === 'right' ? 'text-right' : 'text-left'} custom-scrollbar`} placeholder="번호 매기기 목록 내용을 입력하세요" />
-                              </div>
-                            )}
-                            {block.type === 'quote' && (
-                              <div className={`border-l-4 border-blue-500 pl-4 py-2 my-2 bg-neutral-50`}>
-                                 <textarea value={block.content || ''} onChange={(e) => updateBlogBlock(block.id, 'content', e.target.value)} className={`w-full text-sm italic text-neutral-700 bg-transparent border-none outline-none resize-none min-h-[50px] ${currentAlign === 'center' ? 'text-center' : currentAlign === 'right' ? 'text-right' : 'text-left'} custom-scrollbar`} placeholder="인용구를 입력하세요" />
-                              </div>
-                            )}
-                            {block.type === 'callout' && (
-                              <div className="flex items-start gap-3 bg-white border border-neutral-200 shadow-sm rounded-lg p-4">
-                                <span className="text-xl">💡</span>
-                                <textarea value={block.content || ''} onChange={(e) => updateBlogBlock(block.id, 'content', e.target.value)} className={`flex-1 bg-transparent border-none outline-none resize-none text-sm text-neutral-900 placeholder-neutral-400 min-h-[40px] ${currentAlign === 'center' ? 'text-center' : currentAlign === 'right' ? 'text-right' : 'text-left'} custom-scrollbar`} placeholder="강조할 내용을 입력하세요" />
-                              </div>
-                            )}
-                            {block.type === 'link' && (
-                              <div className="flex flex-col gap-2 border border-neutral-200 rounded-lg p-3 bg-neutral-50 max-w-xl mx-auto">
-                                <div className="flex items-center gap-2">
-                                   <Link2 size={16} className="text-blue-500 shrink-0" />
-                                   <input type="text" value={block.content || ''} onChange={(e) => updateBlogBlock(block.id, 'content', e.target.value)} placeholder="링크 텍스트 (예: 예약 바로가기)" className="flex-1 bg-white border border-neutral-200 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-400" />
-                                </div>
-                                <input type="text" value={block.url || ''} onChange={(e) => updateBlogBlock(block.id, 'url', e.target.value)} placeholder="https://..." className="w-full bg-white border border-neutral-200 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-400 text-neutral-500" />
-                              </div>
-                            )}
-                            {block.type === 'image' && (
-                              <div className="flex flex-col items-center">
-                                {block.url ? (
-                                  <div className="relative inline-block border border-neutral-200 rounded-lg overflow-hidden max-w-full">
-                                    <img src={block.url} alt="block img" className="max-h-[300px] object-contain" />
-                                    <button onClick={() => updateBlogBlock(block.id, 'url', '')} className="absolute top-2 right-2 bg-black/60 text-white p-1.5 rounded-md hover:bg-red-500 transition-colors"><Trash2 size={14}/></button>
-                                  </div>
-                                ) : (
-                                  <label className="w-full h-32 border-2 border-dashed border-blue-200 bg-blue-50 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-blue-400 transition-colors">
-                                    <ImageIcon size={24} className="text-blue-400 mb-2" />
-                                    <span className="text-sm font-medium text-blue-500">이미지 첨부</span>
-                                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleBlogImageUpload(e, block.id)} />
-                                  </label>
-                                )}
-                                <input type="text" value={block.caption || ''} onChange={(e) => updateBlogBlock(block.id, 'caption', e.target.value)} className="w-full max-w-md text-center text-xs text-neutral-500 mt-2 border border-neutral-200 rounded p-1.5 outline-none" placeholder="캡션을 입력하세요" />
-                              </div>
-                            )}
-                            {block.type === 'slide' && (
-                              <div className="flex flex-col items-center gap-2">
-                                <div className="flex gap-2 overflow-x-auto w-full p-3 border border-neutral-200 rounded-lg min-h-[120px] items-center bg-neutral-50 custom-scrollbar">
-                                  {(block.urls || []).map((u, i) => (
-                                     <div key={i} className="relative h-28 w-28 shrink-0 rounded-lg overflow-hidden border border-neutral-200 shadow-sm">
-                                        <img src={u} className="w-full h-full object-cover" alt="slide" />
-                                        <button onClick={() => updateBlogBlock(block.id, 'urls', block.urls.filter((_, idx) => idx !== i))} className="absolute top-1 right-1 bg-black/60 text-white rounded p-1 hover:bg-red-500"><X size={12}/></button>
-                                     </div>
-                                  ))}
-                                  <label className="h-28 w-28 shrink-0 border-2 border-dashed border-blue-200 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-blue-100 hover:border-blue-400 text-blue-400 transition-colors">
-                                     <Plus size={20} className="mb-1" />
-                                     <span className="text-[10px] font-medium">사진 추가</span>
-                                     <input type="file" multiple accept="image/*" className="hidden" onChange={async (e) => {
-                                         const files = Array.from(e.target.files);
-                                         const compressed = await Promise.all(files.map(f => createThumbnail(f)));
-                                         updateBlogBlock(block.id, 'urls', [...(block.urls || []), ...compressed]);
-                                     }} />
-                                  </label>
-                                </div>
-                                <span className="text-[10px] text-neutral-400">여러 장의 이미지를 추가해 슬라이드를 구성하세요.</span>
-                              </div>
-                            )}
-                            {block.type === 'video' && (
-                              <div className="flex flex-col items-center w-full">
-                                {block.url ? (
-                                  <div className="relative inline-block border border-neutral-200 rounded-lg overflow-hidden max-w-full w-full max-w-md bg-black">
-                                    <video src={block.url} controls className="w-full max-h-[300px]" />
-                                    <button onClick={() => updateBlogBlock(block.id, 'url', '')} className="absolute top-2 right-2 bg-black/60 text-white p-1.5 rounded-md hover:bg-red-500 transition-colors"><Trash2 size={14}/></button>
-                                  </div>
-                                ) : (
-                                  <label className="w-full h-32 border-2 border-dashed border-purple-200 bg-purple-50 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-purple-400 transition-colors">
-                                    <Video size={24} className="text-purple-400 mb-2" />
-                                    <span className="text-sm font-medium text-purple-500">영상 첨부 (15MB 이하)</span>
-                                    <input type="file" accept="video/*" className="hidden" onChange={(e) => {
-                                      const file = e.target.files[0];
-                                      if(file) updateBlogBlock(block.id, 'url', URL.createObjectURL(file));
-                                    }} />
-                                  </label>
-                                )}
-                              </div>
-                            )}
-                            {block.type === 'beforeAfter' && (
-                              <div className="flex flex-col md:flex-row gap-4 w-full">
-                                {['beforeUrl', 'afterUrl'].map((f, i) => (
-                                  <div key={f} className="flex-1 flex flex-col items-center border border-neutral-200 rounded-lg p-3 bg-neutral-50 shadow-sm">
-                                     <span className="text-xs font-bold text-neutral-500 mb-2 uppercase tracking-wider bg-white px-2 py-1 rounded border border-neutral-100">{i === 0 ? 'Before' : 'After'}</span>
-                                     {block[f] ? (
-                                       <div className="relative w-full aspect-square rounded-lg overflow-hidden border border-neutral-200">
-                                         <img src={block[f]} className="w-full h-full object-cover"/>
-                                         <button onClick={() => updateBlogBlock(block.id, f, '')} className="absolute top-2 right-2 bg-black/60 text-white p-1.5 rounded hover:bg-red-500"><Trash2 size={12}/></button>
-                                       </div>
-                                     ) : (
-                                       <label className="w-full aspect-square border-2 border-dashed border-neutral-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-neutral-100 hover:border-blue-400 text-neutral-400 transition-colors">
-                                         <Plus size={20} className="mb-1" />
-                                         <span className="text-[10px] font-medium">사진 추가</span>
-                                         <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
-                                           const file = e.target.files[0];
-                                           if(file) updateBlogBlock(block.id, f, await createThumbnail(file));
-                                         }}/>
-                                       </label>
-                                     )}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
                           </div>
-                        )})}
-                      </div>
-
-                      {/* Toolbar */}
-                      <div className="border border-neutral-200 bg-white rounded-xl p-4 shadow-sm">
-                        <div className="grid grid-cols-4 gap-2">
-                          <button onClick={() => addBlogBlock('h1')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><Heading1 size={20} className="mb-1 text-neutral-400"/><span className="text-[10px] font-bold">제목 1</span></button>
-                          <button onClick={() => addBlogBlock('h2')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><Heading2 size={20} className="mb-1 text-neutral-400"/><span className="text-[10px] font-bold">제목 2</span></button>
-                          <button onClick={() => addBlogBlock('text')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><Type size={20} className="mb-1 text-neutral-400"/><span className="text-[10px] font-bold">텍스트</span></button>
-                          <button onClick={() => addBlogBlock('ul')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><List size={20} className="mb-1 text-neutral-400"/><span className="text-[10px] font-bold">글머리기호</span></button>
-                          
-                          <button onClick={() => addBlogBlock('ol')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><ListOrdered size={20} className="mb-1 text-neutral-400"/><span className="text-[10px] font-bold">번호매기기</span></button>
-                          <button onClick={() => addBlogBlock('quote')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><Quote size={20} className="mb-1 text-neutral-400"/><span className="text-[10px] font-bold">인용구</span></button>
-                          <button onClick={() => addBlogBlock('image')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><ImageIcon size={20} className="mb-1 text-neutral-400"/><span className="text-[10px] font-bold">사진</span></button>
-                          <button onClick={() => addBlogBlock('slide')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><GalleryHorizontalEnd size={20} className="mb-1 text-neutral-400"/><span className="text-[10px] font-bold">슬라이드</span></button>
-                          
-                          <button onClick={() => addBlogBlock('video')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><Video size={20} className="mb-1 text-neutral-400"/><span className="text-[10px] font-bold">영상</span></button>
-                          <button onClick={() => addBlogBlock('beforeAfter')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><SplitSquareHorizontal size={20} className="mb-1 text-neutral-400"/><span className="text-[10px] font-bold">Bef/Aft</span></button>
-                          <button onClick={() => addBlogBlock('callout')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><Lightbulb size={20} className="mb-1 text-yellow-500"/><span className="text-[10px] font-bold">콜아웃</span></button>
-                          <button onClick={() => addBlogBlock('link')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><Link2 size={20} className="mb-1 text-blue-500"/><span className="text-[10px] font-bold">링크</span></button>
                         </div>
                       </div>
+
+                      {/* Blocks Area */}
+                      <div className="bg-neutral-50 rounded-xl p-4 md:p-6 min-h-[400px]">
+                        <h4 className="text-sm font-bold text-blue-500 mb-4 flex items-center gap-2">
+                          <LayoutGrid size={16} /> 본문 블록 에디터
+                        </h4>
+
+                        <div className="space-y-4 mb-8">
+                          {(activeBlog.blocks || []).map((block, index) => {
+                            const currentAlign = block.align || (['ul', 'ol', 'callout'].includes(block.type) ? 'left' : 'center');
+
+                            return (
+                              <div key={block.id} className="group relative border border-neutral-200 bg-white rounded-xl p-4 shadow-sm hover:border-blue-300 transition-colors">
+                                {/* Block Controls */}
+                                <div className="flex items-center justify-between mb-3">
+                                  <div className="flex items-center gap-2">
+                                    <span className="bg-neutral-800 text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">{block.type.toUpperCase()}</span>
+                                    <div className="flex items-center gap-1 bg-neutral-50 border border-neutral-200 rounded p-0.5">
+                                      <button onClick={() => updateBlogBlock(block.id, 'align', 'left')} className={`p-1.5 rounded transition-colors ${currentAlign === 'left' ? 'bg-white shadow-sm text-blue-500' : 'text-neutral-400 hover:bg-neutral-200'}`}><AlignLeft size={12} /></button>
+                                      <button onClick={() => updateBlogBlock(block.id, 'align', 'center')} className={`p-1.5 rounded transition-colors ${currentAlign === 'center' ? 'bg-white shadow-sm text-blue-500' : 'text-neutral-400 hover:bg-neutral-200'}`}><AlignCenter size={12} /></button>
+                                      <button onClick={() => updateBlogBlock(block.id, 'align', 'right')} className={`p-1.5 rounded transition-colors ${currentAlign === 'right' ? 'bg-white shadow-sm text-blue-500' : 'text-neutral-400 hover:bg-neutral-200'}`}><AlignRight size={12} /></button>
+                                    </div>
+                                  </div>
+                                  <button onClick={() => removeBlogBlock(block.id)} className="text-neutral-400 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity"><X size={14} /></button>
+                                </div>
+
+                                {/* Block Content Render */}
+                                {block.type === 'h1' && (
+                                  <input type="text" value={block.content || ''} onChange={(e) => updateBlogBlock(block.id, 'content', e.target.value)} className={`w-full text-2xl font-black border-none outline-none placeholder-neutral-300 ${currentAlign === 'center' ? 'text-center' : currentAlign === 'right' ? 'text-right' : 'text-left'}`} placeholder="제목 1 (대제목)을 입력하세요" />
+                                )}
+                                {block.type === 'h2' && (
+                                  <input type="text" value={block.content || ''} onChange={(e) => updateBlogBlock(block.id, 'content', e.target.value)} className={`w-full text-xl font-bold border-none outline-none placeholder-neutral-300 ${currentAlign === 'center' ? 'text-center' : currentAlign === 'right' ? 'text-right' : 'text-left'}`} placeholder="제목 2 (중제목)을 입력하세요" />
+                                )}
+                                {block.type === 'text' && (
+                                  <textarea value={block.content || ''} onChange={(e) => updateBlogBlock(block.id, 'content', e.target.value)} className={`w-full text-sm leading-relaxed border-none outline-none resize-none placeholder-neutral-300 min-h-[60px] ${currentAlign === 'center' ? 'text-center' : currentAlign === 'right' ? 'text-right' : 'text-left'} custom-scrollbar`} placeholder="본문 내용을 입력하세요" />
+                                )}
+                                {block.type === 'ul' && (
+                                  <div className="flex items-start gap-2 px-4 md:px-8">
+                                    <span className="text-xl leading-none pt-0.5 text-neutral-400">•</span>
+                                    <textarea value={block.content || ''} onChange={(e) => updateBlogBlock(block.id, 'content', e.target.value)} className={`flex-1 text-sm leading-relaxed border-none outline-none resize-none placeholder-neutral-300 min-h-[40px] ${currentAlign === 'center' ? 'text-center' : currentAlign === 'right' ? 'text-right' : 'text-left'} custom-scrollbar`} placeholder="글머리 기호 목록 내용을 입력하세요" />
+                                  </div>
+                                )}
+                                {block.type === 'ol' && (
+                                  <div className="flex items-start gap-2 px-4 md:px-8">
+                                    <span className="text-sm font-bold pt-1 text-neutral-400">1.</span>
+                                    <textarea value={block.content || ''} onChange={(e) => updateBlogBlock(block.id, 'content', e.target.value)} className={`flex-1 text-sm leading-relaxed border-none outline-none resize-none placeholder-neutral-300 min-h-[40px] ${currentAlign === 'center' ? 'text-center' : currentAlign === 'right' ? 'text-right' : 'text-left'} custom-scrollbar`} placeholder="번호 매기기 목록 내용을 입력하세요" />
+                                  </div>
+                                )}
+                                {block.type === 'quote' && (
+                                  <div className={`border-l-4 border-blue-500 pl-4 py-2 my-2 bg-neutral-50`}>
+                                    <textarea value={block.content || ''} onChange={(e) => updateBlogBlock(block.id, 'content', e.target.value)} className={`w-full text-sm italic text-neutral-700 bg-transparent border-none outline-none resize-none min-h-[50px] ${currentAlign === 'center' ? 'text-center' : currentAlign === 'right' ? 'text-right' : 'text-left'} custom-scrollbar`} placeholder="인용구를 입력하세요" />
+                                  </div>
+                                )}
+                                {block.type === 'callout' && (
+                                  <div className="flex items-start gap-3 bg-white border border-neutral-200 shadow-sm rounded-lg p-4">
+                                    <span className="text-xl">💡</span>
+                                    <textarea value={block.content || ''} onChange={(e) => updateBlogBlock(block.id, 'content', e.target.value)} className={`flex-1 bg-transparent border-none outline-none resize-none text-sm text-neutral-900 placeholder-neutral-400 min-h-[40px] ${currentAlign === 'center' ? 'text-center' : currentAlign === 'right' ? 'text-right' : 'text-left'} custom-scrollbar`} placeholder="강조할 내용을 입력하세요" />
+                                  </div>
+                                )}
+                                {block.type === 'link' && (
+                                  <div className="flex flex-col gap-2 border border-neutral-200 rounded-lg p-3 bg-neutral-50 max-w-xl mx-auto">
+                                    <div className="flex items-center gap-2">
+                                      <Link2 size={16} className="text-blue-500 shrink-0" />
+                                      <input type="text" value={block.content || ''} onChange={(e) => updateBlogBlock(block.id, 'content', e.target.value)} placeholder="링크 텍스트 (예: 예약 바로가기)" className="flex-1 bg-white border border-neutral-200 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-400" />
+                                    </div>
+                                    <input type="text" value={block.url || ''} onChange={(e) => updateBlogBlock(block.id, 'url', e.target.value)} placeholder="https://..." className="w-full bg-white border border-neutral-200 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-400 text-neutral-500" />
+                                  </div>
+                                )}
+                                {block.type === 'image' && (
+                                  <div className="flex flex-col items-center">
+                                    {block.url ? (
+                                      <div className="relative inline-block border border-neutral-200 rounded-lg overflow-hidden max-w-full">
+                                        <img src={block.url} alt="block img" className="max-h-[300px] object-contain" />
+                                        <button onClick={() => updateBlogBlock(block.id, 'url', '')} className="absolute top-2 right-2 bg-black/60 text-white p-1.5 rounded-md hover:bg-red-500 transition-colors"><Trash2 size={14} /></button>
+                                      </div>
+                                    ) : (
+                                      <label className="w-full h-32 border-2 border-dashed border-blue-200 bg-blue-50 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-blue-400 transition-colors">
+                                        <ImageIcon size={24} className="text-blue-400 mb-2" />
+                                        <span className="text-sm font-medium text-blue-500">이미지 첨부</span>
+                                        <input type="file" accept="image/*" className="hidden" onChange={(e) => handleBlogImageUpload(e, block.id)} />
+                                      </label>
+                                    )}
+                                    <input type="text" value={block.caption || ''} onChange={(e) => updateBlogBlock(block.id, 'caption', e.target.value)} className="w-full max-w-md text-center text-xs text-neutral-500 mt-2 border border-neutral-200 rounded p-1.5 outline-none" placeholder="캡션을 입력하세요" />
+                                  </div>
+                                )}
+                                {block.type === 'slide' && (
+                                  <div className="flex flex-col items-center gap-2">
+                                    <div className="flex gap-2 overflow-x-auto w-full p-3 border border-neutral-200 rounded-lg min-h-[120px] items-center bg-neutral-50 custom-scrollbar">
+                                      {(block.urls || []).map((u, i) => (
+                                        <div key={i} className="relative h-28 w-28 shrink-0 rounded-lg overflow-hidden border border-neutral-200 shadow-sm">
+                                          <img src={u} className="w-full h-full object-cover" alt="slide" />
+                                          <button onClick={() => updateBlogBlock(block.id, 'urls', block.urls.filter((_, idx) => idx !== i))} className="absolute top-1 right-1 bg-black/60 text-white rounded p-1 hover:bg-red-500"><X size={12} /></button>
+                                        </div>
+                                      ))}
+                                      <label className="h-28 w-28 shrink-0 border-2 border-dashed border-blue-200 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-blue-100 hover:border-blue-400 text-blue-400 transition-colors">
+                                        <Plus size={20} className="mb-1" />
+                                        <span className="text-[10px] font-medium">사진 추가</span>
+                                        <input type="file" multiple accept="image/*" className="hidden" onChange={async (e) => {
+                                          const files = Array.from(e.target.files);
+                                          const compressed = await Promise.all(files.map(f => createThumbnail(f)));
+                                          updateBlogBlock(block.id, 'urls', [...(block.urls || []), ...compressed]);
+                                        }} />
+                                      </label>
+                                    </div>
+                                    <span className="text-[10px] text-neutral-400">여러 장의 이미지를 추가해 슬라이드를 구성하세요.</span>
+                                  </div>
+                                )}
+                                {block.type === 'video' && (
+                                  <div className="flex flex-col items-center w-full">
+                                    {block.url ? (
+                                      <div className="relative inline-block border border-neutral-200 rounded-lg overflow-hidden max-w-full w-full max-w-md bg-black">
+                                        <video src={block.url} controls className="w-full max-h-[300px]" />
+                                        <button onClick={() => updateBlogBlock(block.id, 'url', '')} className="absolute top-2 right-2 bg-black/60 text-white p-1.5 rounded-md hover:bg-red-500 transition-colors"><Trash2 size={14} /></button>
+                                      </div>
+                                    ) : (
+                                      <label className="w-full h-32 border-2 border-dashed border-purple-200 bg-purple-50 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-purple-400 transition-colors">
+                                        <Video size={24} className="text-purple-400 mb-2" />
+                                        <span className="text-sm font-medium text-purple-500">영상 첨부 (15MB 이하)</span>
+                                        <input type="file" accept="video/*" className="hidden" onChange={(e) => {
+                                          const file = e.target.files[0];
+                                          if (file) updateBlogBlock(block.id, 'url', URL.createObjectURL(file));
+                                        }} />
+                                      </label>
+                                    )}
+                                  </div>
+                                )}
+                                {block.type === 'beforeAfter' && (
+                                  <div className="flex flex-col md:flex-row gap-4 w-full">
+                                    {['beforeUrl', 'afterUrl'].map((f, i) => (
+                                      <div key={f} className="flex-1 flex flex-col items-center border border-neutral-200 rounded-lg p-3 bg-neutral-50 shadow-sm">
+                                        <span className="text-xs font-bold text-neutral-500 mb-2 uppercase tracking-wider bg-white px-2 py-1 rounded border border-neutral-100">{i === 0 ? 'Before' : 'After'}</span>
+                                        {block[f] ? (
+                                          <div className="relative w-full aspect-square rounded-lg overflow-hidden border border-neutral-200">
+                                            <img src={block[f]} className="w-full h-full object-cover" />
+                                            <button onClick={() => updateBlogBlock(block.id, f, '')} className="absolute top-2 right-2 bg-black/60 text-white p-1.5 rounded hover:bg-red-500"><Trash2 size={12} /></button>
+                                          </div>
+                                        ) : (
+                                          <label className="w-full aspect-square border-2 border-dashed border-neutral-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-neutral-100 hover:border-blue-400 text-neutral-400 transition-colors">
+                                            <Plus size={20} className="mb-1" />
+                                            <span className="text-[10px] font-medium">사진 추가</span>
+                                            <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                                              const file = e.target.files[0];
+                                              if (file) updateBlogBlock(block.id, f, await createThumbnail(file));
+                                            }} />
+                                          </label>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+
+                        {/* Toolbar */}
+                        <div className="border border-neutral-200 bg-white rounded-xl p-4 shadow-sm">
+                          <div className="grid grid-cols-4 gap-2">
+                            <button onClick={() => addBlogBlock('h1')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><Heading1 size={20} className="mb-1 text-neutral-400" /><span className="text-[10px] font-bold">제목 1</span></button>
+                            <button onClick={() => addBlogBlock('h2')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><Heading2 size={20} className="mb-1 text-neutral-400" /><span className="text-[10px] font-bold">제목 2</span></button>
+                            <button onClick={() => addBlogBlock('text')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><Type size={20} className="mb-1 text-neutral-400" /><span className="text-[10px] font-bold">텍스트</span></button>
+                            <button onClick={() => addBlogBlock('ul')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><List size={20} className="mb-1 text-neutral-400" /><span className="text-[10px] font-bold">글머리기호</span></button>
+
+                            <button onClick={() => addBlogBlock('ol')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><ListOrdered size={20} className="mb-1 text-neutral-400" /><span className="text-[10px] font-bold">번호매기기</span></button>
+                            <button onClick={() => addBlogBlock('quote')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><Quote size={20} className="mb-1 text-neutral-400" /><span className="text-[10px] font-bold">인용구</span></button>
+                            <button onClick={() => addBlogBlock('image')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><ImageIcon size={20} className="mb-1 text-neutral-400" /><span className="text-[10px] font-bold">사진</span></button>
+                            <button onClick={() => addBlogBlock('slide')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><GalleryHorizontalEnd size={20} className="mb-1 text-neutral-400" /><span className="text-[10px] font-bold">슬라이드</span></button>
+
+                            <button onClick={() => addBlogBlock('video')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><Video size={20} className="mb-1 text-neutral-400" /><span className="text-[10px] font-bold">영상</span></button>
+                            <button onClick={() => addBlogBlock('beforeAfter')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><SplitSquareHorizontal size={20} className="mb-1 text-neutral-400" /><span className="text-[10px] font-bold">Bef/Aft</span></button>
+                            <button onClick={() => addBlogBlock('callout')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><Lightbulb size={20} className="mb-1 text-yellow-500" /><span className="text-[10px] font-bold">콜아웃</span></button>
+                            <button onClick={() => addBlogBlock('link')} className="flex flex-col items-center justify-center py-3 border border-neutral-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 text-neutral-600 transition-colors"><Link2 size={20} className="mb-1 text-blue-500" /><span className="text-[10px] font-bold">링크</span></button>
+                          </div>
+                        </div>
+                      </div>
+
                     </div>
 
+                    {/* Footer Actions */}
+                    <div className="bg-neutral-50 border-t border-neutral-200 p-4 flex justify-end gap-3 shrink-0">
+                      <button className="px-6 py-2.5 rounded-lg font-bold text-sm bg-blue-600 hover:bg-blue-700 text-white shadow-md transition-colors flex items-center gap-2" onClick={saveBlogToDB}>
+                        <Save size={16} /> 데이터베이스에 저장
+                      </button>
+                    </div>
                   </div>
-
-                  {/* Footer Actions */}
-                  <div className="bg-neutral-50 border-t border-neutral-200 p-4 flex justify-end gap-3 shrink-0">
-                    <button className="px-6 py-2.5 rounded-lg font-bold text-sm bg-blue-600 hover:bg-blue-700 text-white shadow-md transition-colors flex items-center gap-2" onClick={saveBlogToDB}>
-                      <Save size={16} /> 데이터베이스에 저장
-                    </button>
+                ) : (
+                  <div className="flex-1 bg-neutral-900 border border-neutral-800 rounded-2xl flex flex-col items-center justify-center text-neutral-500 min-h-[400px]">
+                    <FileText size={48} className="mb-4 text-neutral-700" />
+                    <p>선택된 날짜 범위 내에 문서가 없습니다.<br />좌측 패널에서 '+ 새 문서'를 클릭해 작성하세요.</p>
                   </div>
-                </div>
-              ) : (
-                <div className="flex-1 bg-neutral-900 border border-neutral-800 rounded-2xl flex flex-col items-center justify-center text-neutral-500 min-h-[400px]">
-                  <FileText size={48} className="mb-4 text-neutral-700"/>
-                  <p>선택된 날짜 범위 내에 문서가 없습니다.<br/>좌측 패널에서 '+ 새 문서'를 클릭해 작성하세요.</p>
-                </div>
-              )}
+                )}
               </div>
             </div>
           )}
@@ -1858,7 +1909,7 @@ export default function App() {
                   </h2>
                   <p className="text-neutral-400">가족 구성에 맞는 포즈 레퍼런스를 탐색하고 관리하세요.</p>
                 </div>
-                <button 
+                <button
                   onClick={() => setIsPosingUploadModalOpen(true)}
                   className="bg-lime-400 hover:bg-lime-500 text-neutral-950 px-5 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors shadow-lg shadow-lime-500/10 shrink-0"
                 >
@@ -1867,7 +1918,7 @@ export default function App() {
               </header>
 
               <div className="flex flex-col lg:flex-row gap-6">
-                
+
                 {/* Desktop Sidebar: Filters */}
                 <aside className="hidden lg:block w-72 shrink-0">
                   <div className="bg-neutral-900 p-5 rounded-2xl border border-neutral-800 shadow-sm sticky top-8">
@@ -1876,7 +1927,7 @@ export default function App() {
                         <Filter className="w-5 h-5 text-lime-400" />
                         <h2 className="font-semibold text-lg">필터 검색</h2>
                       </div>
-                      <button 
+                      <button
                         onClick={() => setFilters({ headCount: 'all', grandparents: 'all', parents: 'all', children: [], includePets: false, onlyFavorites: false })}
                         className="text-xs text-neutral-400 hover:text-lime-400 transition-colors"
                       >
@@ -1893,17 +1944,17 @@ export default function App() {
                     <h3 className="text-lg font-medium text-neutral-300">
                       검색 결과 <span className="text-lime-400 font-bold ml-1">{filteredPhotos.length}</span>건
                     </h3>
-                    
+
                     {/* Mobile Reset Button */}
                     <div className="lg:hidden">
-                        {(activeFilterCount > 0) && (
-                            <button 
-                                onClick={() => setFilters({ headCount: 'all', grandparents: 'all', parents: 'all', children: [], includePets: false, onlyFavorites: false })}
-                                className="text-xs text-lime-400 border border-lime-400/30 bg-lime-400/10 px-3 py-1.5 rounded-full"
-                            >
-                                필터 초기화
-                            </button>
-                        )}
+                      {(activeFilterCount > 0) && (
+                        <button
+                          onClick={() => setFilters({ headCount: 'all', grandparents: 'all', parents: 'all', children: [], includePets: false, onlyFavorites: false })}
+                          className="text-xs text-lime-400 border border-lime-400/30 bg-lime-400/10 px-3 py-1.5 rounded-full"
+                        >
+                          필터 초기화
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -1916,26 +1967,26 @@ export default function App() {
                   ) : (
                     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-6">
                       {filteredPhotos.map(photo => (
-                        <div 
-                          key={photo.id} 
+                        <div
+                          key={photo.id}
                           onClick={() => setViewingPhotoId(photo.id)}
                           className="group relative bg-neutral-900 rounded-xl overflow-hidden border border-neutral-800 hover:border-lime-500 transition-all cursor-pointer flex flex-col"
                         >
                           {/* Image */}
                           <div className="aspect-[4/5] bg-neutral-950 overflow-hidden relative">
-                            <img 
-                              src={photo.imageUrl} 
-                              alt="Posing Reference" 
+                            <img
+                              src={photo.imageUrl}
+                              alt="Posing Reference"
                               className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                             />
-                            
+
                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-300 flex items-center justify-center">
-                                <Maximize2 className="text-white opacity-0 group-hover:opacity-100 transform scale-75 group-hover:scale-100 transition-all drop-shadow-lg w-8 h-8 hidden md:block" />
+                              <Maximize2 className="text-white opacity-0 group-hover:opacity-100 transform scale-75 group-hover:scale-100 transition-all drop-shadow-lg w-8 h-8 hidden md:block" />
                             </div>
-                            
+
                             {/* Top Action Buttons */}
                             <div className="absolute top-2 left-2 md:top-3 md:left-3 z-10">
-                              <button 
+                              <button
                                 onClick={(e) => handleToggleFavorite(e, photo.id, photo.isFavorite)}
                                 className={`p-1.5 md:p-2 rounded-full transition-all backdrop-blur-sm ${photo.isFavorite ? 'bg-lime-400/20 text-lime-400 hover:bg-lime-400/40' : 'bg-black/50 text-white/70 hover:text-white hover:bg-black/70'}`}
                                 title={photo.isFavorite ? "즐겨찾기 해제" : "즐겨찾기 추가"}
@@ -1945,14 +1996,14 @@ export default function App() {
                             </div>
 
                             <div className="absolute top-2 right-2 md:top-3 md:right-3 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity z-10 flex gap-1 md:gap-2">
-                              <button 
+                              <button
                                 onClick={(e) => handleOpenEditModal(e, photo)}
                                 className="p-1.5 md:p-2 bg-black/50 text-white rounded-full hover:bg-neutral-600 transition-colors backdrop-blur-sm"
                                 title="설정 및 수정"
                               >
                                 <Settings className="w-3.5 h-3.5 md:w-4 md:h-4" />
                               </button>
-                              <button 
+                              <button
                                 onClick={(e) => handlePosingDelete(e, photo.id)}
                                 className="p-1.5 md:p-2 bg-black/50 text-white rounded-full hover:bg-red-600 transition-colors backdrop-blur-sm"
                                 title="삭제"
@@ -1990,28 +2041,28 @@ export default function App() {
                                   <Baby className="w-3 h-3 md:w-3.5 md:h-3.5 text-yellow-400 mt-0.5 flex-shrink-0" />
                                   <div className="flex flex-wrap gap-1">
                                     {photo.children.map((c, idx) => (
-                                        <React.Fragment key={idx}>
-                                            {renderChildTag(c)}
-                                        </React.Fragment>
+                                      <React.Fragment key={idx}>
+                                        {renderChildTag(c)}
+                                      </React.Fragment>
                                     ))}
                                   </div>
                                 </div>
                               )}
                               {photo.petCount > 0 && (
                                 <div className="flex items-center gap-1.5 md:gap-2 text-[10px] md:text-sm text-neutral-300 mt-1">
-                                    <Dog className="w-3 h-3 md:w-3.5 md:h-3.5 text-lime-400 flex-shrink-0" />
-                                    <span className="text-[10px] md:text-xs bg-neutral-700 px-1.5 py-0.5 rounded text-neutral-300">
-                                        반려견 {photo.petCount}마리
-                                    </span>
+                                  <Dog className="w-3 h-3 md:w-3.5 md:h-3.5 text-lime-400 flex-shrink-0" />
+                                  <span className="text-[10px] md:text-xs bg-neutral-700 px-1.5 py-0.5 rounded text-neutral-300">
+                                    반려견 {photo.petCount}마리
+                                  </span>
                                 </div>
                               )}
                             </div>
 
                             {photo.memo && (
-                                <div className="mt-auto pt-2 md:pt-3 border-t border-neutral-800 flex items-start gap-1.5 md:gap-2 text-[10px] md:text-xs text-neutral-400">
-                                    <AlignLeft className="w-3 h-3 md:w-3.5 md:h-3.5 flex-shrink-0 mt-0.5 text-neutral-500" />
-                                    <p className="line-clamp-2 leading-relaxed">{photo.memo}</p>
-                                </div>
+                              <div className="mt-auto pt-2 md:pt-3 border-t border-neutral-800 flex items-start gap-1.5 md:gap-2 text-[10px] md:text-xs text-neutral-400">
+                                <AlignLeft className="w-3 h-3 md:w-3.5 md:h-3.5 flex-shrink-0 mt-0.5 text-neutral-500" />
+                                <p className="line-clamp-2 leading-relaxed">{photo.memo}</p>
+                              </div>
                             )}
                           </div>
                         </div>
@@ -2059,7 +2110,7 @@ export default function App() {
                     <div key={acc} className="flex items-center justify-between bg-neutral-950 border border-neutral-800 p-4 rounded-xl min-h-[74px]">
                       {editingIgAcc?.oldName === acc ? (
                         <form onSubmit={handleEditIgAccount} className="flex flex-1 gap-2">
-                          <input autoFocus type="text" value={editingIgAcc.newName} onChange={(e) => setEditingIgAcc({...editingIgAcc, newName: e.target.value})} className="flex-1 bg-neutral-900 border border-lime-500 rounded-lg px-3 py-1.5 text-white outline-none text-sm" />
+                          <input autoFocus type="text" value={editingIgAcc.newName} onChange={(e) => setEditingIgAcc({ ...editingIgAcc, newName: e.target.value })} className="flex-1 bg-neutral-900 border border-lime-500 rounded-lg px-3 py-1.5 text-white outline-none text-sm" />
                           <button type="submit" className="bg-lime-400 hover:bg-lime-500 text-black px-4 py-1.5 rounded-lg text-sm font-bold whitespace-nowrap transition-colors">저장</button>
                           <button type="button" onClick={() => setEditingIgAcc(null)} className="bg-neutral-800 hover:bg-neutral-700 text-white px-4 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors">취소</button>
                         </form>
@@ -2067,7 +2118,7 @@ export default function App() {
                         <>
                           <div className="flex items-center gap-3"><div className="w-10 h-10 bg-neutral-800 rounded-full flex items-center justify-center shrink-0"><Instagram size={18} className="text-neutral-400" /></div><span className="font-medium text-neutral-200 break-all line-clamp-1">{acc}</span></div>
                           <div className="flex items-center gap-1 shrink-0">
-                            <button onClick={() => setEditingIgAcc({oldName: acc, newName: acc})} className="p-2 text-neutral-500 hover:text-lime-400 hover:bg-lime-400/10 rounded-lg transition-colors" title="수정"><Edit2 size={18} /></button>
+                            <button onClick={() => setEditingIgAcc({ oldName: acc, newName: acc })} className="p-2 text-neutral-500 hover:text-lime-400 hover:bg-lime-400/10 rounded-lg transition-colors" title="수정"><Edit2 size={18} /></button>
                             <button onClick={() => handleDeleteAccount(acc)} className="p-2 text-neutral-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors" title="삭제"><Trash2 size={18} /></button>
                           </div>
                         </>
@@ -2090,7 +2141,7 @@ export default function App() {
                     <div key={acc} className="flex items-center justify-between bg-neutral-950 border border-neutral-800 p-4 rounded-xl min-h-[74px]">
                       {editingThreadAcc?.oldName === acc ? (
                         <form onSubmit={handleEditThreadAccount} className="flex flex-1 gap-2">
-                          <input autoFocus type="text" value={editingThreadAcc.newName} onChange={(e) => setEditingThreadAcc({...editingThreadAcc, newName: e.target.value})} className="flex-1 bg-neutral-900 border border-lime-500 rounded-lg px-3 py-1.5 text-white outline-none text-sm" />
+                          <input autoFocus type="text" value={editingThreadAcc.newName} onChange={(e) => setEditingThreadAcc({ ...editingThreadAcc, newName: e.target.value })} className="flex-1 bg-neutral-900 border border-lime-500 rounded-lg px-3 py-1.5 text-white outline-none text-sm" />
                           <button type="submit" className="bg-lime-400 hover:bg-lime-500 text-black px-4 py-1.5 rounded-lg text-sm font-bold whitespace-nowrap transition-colors">저장</button>
                           <button type="button" onClick={() => setEditingThreadAcc(null)} className="bg-neutral-800 hover:bg-neutral-700 text-white px-4 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors">취소</button>
                         </form>
@@ -2098,7 +2149,7 @@ export default function App() {
                         <>
                           <div className="flex items-center gap-3"><div className="w-10 h-10 bg-neutral-800 rounded-full flex items-center justify-center shrink-0"><MessageCircle size={18} className="text-neutral-400" /></div><span className="font-medium text-neutral-200 break-all line-clamp-1">{acc}</span></div>
                           <div className="flex items-center gap-1 shrink-0">
-                            <button onClick={() => setEditingThreadAcc({oldName: acc, newName: acc})} className="p-2 text-neutral-500 hover:text-lime-400 hover:bg-lime-400/10 rounded-lg transition-colors" title="수정"><Edit2 size={18} /></button>
+                            <button onClick={() => setEditingThreadAcc({ oldName: acc, newName: acc })} className="p-2 text-neutral-500 hover:text-lime-400 hover:bg-lime-400/10 rounded-lg transition-colors" title="수정"><Edit2 size={18} /></button>
                             <button onClick={() => handleDeleteThreadAccount(acc)} className="p-2 text-neutral-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors" title="삭제"><Trash2 size={18} /></button>
                           </div>
                         </>
@@ -2121,7 +2172,7 @@ export default function App() {
                     <div key={acc} className="flex items-center justify-between bg-neutral-950 border border-neutral-800 p-4 rounded-xl min-h-[74px]">
                       {editingBlogAcc?.oldName === acc ? (
                         <form onSubmit={handleEditBlogAccount} className="flex flex-1 gap-2">
-                          <input autoFocus type="text" value={editingBlogAcc.newName} onChange={(e) => setEditingBlogAcc({...editingBlogAcc, newName: e.target.value})} className="flex-1 bg-neutral-900 border border-lime-500 rounded-lg px-3 py-1.5 text-white outline-none text-sm" />
+                          <input autoFocus type="text" value={editingBlogAcc.newName} onChange={(e) => setEditingBlogAcc({ ...editingBlogAcc, newName: e.target.value })} className="flex-1 bg-neutral-900 border border-lime-500 rounded-lg px-3 py-1.5 text-white outline-none text-sm" />
                           <button type="submit" className="bg-lime-400 hover:bg-lime-500 text-black px-4 py-1.5 rounded-lg text-sm font-bold whitespace-nowrap transition-colors">저장</button>
                           <button type="button" onClick={() => setEditingBlogAcc(null)} className="bg-neutral-800 hover:bg-neutral-700 text-white px-4 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors">취소</button>
                         </form>
@@ -2129,7 +2180,7 @@ export default function App() {
                         <>
                           <div className="flex items-center gap-3"><div className="w-10 h-10 bg-neutral-800 rounded-full flex items-center justify-center shrink-0"><FileText size={18} className="text-neutral-400" /></div><span className="font-medium text-neutral-200 break-all line-clamp-1">{acc}</span></div>
                           <div className="flex items-center gap-1 shrink-0">
-                            <button onClick={() => setEditingBlogAcc({oldName: acc, newName: acc})} className="p-2 text-neutral-500 hover:text-lime-400 hover:bg-lime-400/10 rounded-lg transition-colors" title="수정"><Edit2 size={18} /></button>
+                            <button onClick={() => setEditingBlogAcc({ oldName: acc, newName: acc })} className="p-2 text-neutral-500 hover:text-lime-400 hover:bg-lime-400/10 rounded-lg transition-colors" title="수정"><Edit2 size={18} /></button>
                             <button onClick={() => handleDeleteBlogAccount(acc)} className="p-2 text-neutral-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors" title="삭제"><Trash2 size={18} /></button>
                           </div>
                         </>
@@ -2147,22 +2198,22 @@ export default function App() {
                     스튜디오 구글 드라이브 계정을 연동하여, 업로드 시 원본 이미지를 자동으로 폴더링하고 고객에게 제공할 공유 링크를 생성합니다.
                   </div>
                   {isDriveConnected ? (
-                      <div className="flex items-center justify-between bg-neutral-950 border border-neutral-800 p-4 rounded-xl">
-                          <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-blue-500/10 border border-blue-500/20 rounded-full flex items-center justify-center">
-                                  <HardDrive size={18} className="text-blue-400" />
-                              </div>
-                              <div>
-                                  <span className="font-bold text-white block">연동 완료</span>
-                                  <span className="text-xs text-neutral-500">{driveAccount}</span>
-                              </div>
-                          </div>
-                          <button onClick={handleDriveDisconnect} className="bg-neutral-800 hover:bg-red-500/20 hover:text-red-400 text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors border border-transparent hover:border-red-500/30">연동 해제</button>
+                    <div className="flex items-center justify-between bg-neutral-950 border border-neutral-800 p-4 rounded-xl">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-blue-500/10 border border-blue-500/20 rounded-full flex items-center justify-center">
+                          <HardDrive size={18} className="text-blue-400" />
+                        </div>
+                        <div>
+                          <span className="font-bold text-white block">연동 완료</span>
+                          <span className="text-xs text-neutral-500">{driveAccount}</span>
+                        </div>
                       </div>
+                      <button onClick={handleDriveDisconnect} className="bg-neutral-800 hover:bg-red-500/20 hover:text-red-400 text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors border border-transparent hover:border-red-500/30">연동 해제</button>
+                    </div>
                   ) : (
-                      <button onClick={handleDriveConnect} className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors w-full sm:w-auto shadow-lg shadow-blue-500/20">
-                          <HardDrive size={18} /> Google 계정으로 연동하기
-                      </button>
+                    <button onClick={handleDriveConnect} className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors w-full sm:w-auto shadow-lg shadow-blue-500/20">
+                      <HardDrive size={18} /> Google 계정으로 연동하기
+                    </button>
                   )}
                 </div>
               </section>
@@ -2189,7 +2240,7 @@ export default function App() {
       {/* ==========================================
           [Overlays & Modals]
           ========================================== */}
-      
+
       {/* Archive Tag Edit Modal */}
       {editingTagsItem && (
         <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -2200,7 +2251,7 @@ export default function App() {
                 <X size={20} />
               </button>
             </div>
-            
+
             <div className="mb-6 rounded-xl overflow-hidden border border-neutral-800 aspect-video bg-neutral-950 flex items-center justify-center">
               <img src={editingTagsItem.thumbnail} alt="preview" className="max-w-full max-h-full object-contain" />
             </div>
@@ -2219,8 +2270,8 @@ export default function App() {
               </div>
 
               <form onSubmit={handleAddTag} className="flex gap-2">
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={newTagInput}
                   onChange={(e) => setNewTagInput(e.target.value)}
                   placeholder="새 태그 입력 (엔터로 추가)"
@@ -2245,17 +2296,17 @@ export default function App() {
       {selectedPost && (
         <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col sm:flex-row overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
-            
+
             <div className="w-full sm:w-1/2 bg-neutral-950 p-6 flex flex-col relative border-r border-neutral-800">
               <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                <ImageIcon className="text-lime-400" size={20}/> 첨부된 사진 ({(selectedPost.images || []).length}장)
+                <ImageIcon className="text-lime-400" size={20} /> 첨부된 사진 ({(selectedPost.images || []).length}장)
               </h3>
-              
+
               <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
                 {(selectedPost.images || []).map((imgUrl, idx) => (
                   <div key={idx} className="relative group rounded-xl overflow-hidden border border-neutral-800 bg-neutral-900 aspect-[4/5]">
-                    <img src={imgUrl} className="w-full h-full object-cover" alt="preview"/>
-                    <button 
+                    <img src={imgUrl} className="w-full h-full object-cover" alt="preview" />
+                    <button
                       onClick={() => removeImageFromPost(idx)}
                       className="absolute top-3 right-3 bg-black/60 hover:bg-red-500 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-all backdrop-blur-md"
                     >
@@ -2264,34 +2315,39 @@ export default function App() {
                     {idx === 0 && <span className="absolute top-3 left-3 bg-lime-400 text-neutral-950 text-xs font-bold px-2 py-1 rounded-md shadow-md">Cover</span>}
                   </div>
                 ))}
-                
+
                 <label className="flex flex-col items-center justify-center border-2 border-dashed border-neutral-700 hover:border-lime-500 rounded-xl aspect-[4/5] cursor-pointer bg-neutral-900/50 transition-colors group">
                   <div className="bg-neutral-800 p-3 rounded-full mb-2 group-hover:bg-lime-400 group-hover:text-neutral-950 transition-colors">
                     <Plus size={24} />
                   </div>
                   <span className="text-sm font-medium text-neutral-400 group-hover:text-lime-400 transition-colors">사진 추가</span>
-                  <input type="file" multiple accept="image/*" className="hidden" onChange={handleGridImageUpload}/>
+                  <input type="file" multiple accept="image/*" className="hidden" onChange={handleGridImageUpload} />
                 </label>
               </div>
             </div>
 
             <div className="w-full sm:w-1/2 p-6 flex flex-col bg-neutral-900 relative">
-              <button onClick={() => setSelectedPost(null)} className="absolute top-4 right-4 text-neutral-400 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-full p-2 transition-colors">
-                <X size={20} />
-              </button>
-              
-              <div className="mb-4">
+              <div className="absolute top-4 right-4 flex gap-2">
+                <button onClick={() => setSelectedPost({ ...selectedPost, isPinned: !selectedPost.isPinned })} className={`p-2 rounded-lg transition-colors flex items-center justify-center ${selectedPost.isPinned ? 'bg-lime-400/20 text-lime-400 border border-lime-400/30' : 'bg-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-700'}`} title={selectedPost.isPinned ? "고정 해제" : "상단 고정"}>
+                  <Pin size={20} className={selectedPost.isPinned ? "fill-lime-400" : ""} />
+                </button>
+                <button onClick={() => setSelectedPost(null)} className="text-neutral-400 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-full p-2 transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="mb-4 pr-16">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">본문(Caption) 편집</h3>
                 <span className="text-xs text-lime-400 mt-1 font-medium bg-lime-400/10 px-2 py-0.5 rounded-full inline-block">현재 계정: {activeAccount}</span>
               </div>
-              
-              <textarea 
+
+              <textarea
                 className="w-full flex-1 bg-neutral-950 border border-neutral-800 rounded-xl p-4 text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-lime-500 focus:ring-1 focus:ring-lime-500 resize-none font-sans text-sm leading-relaxed custom-scrollbar"
                 placeholder="인스타그램에 올릴 본문 내용을 여기에 작성해보세요."
                 value={selectedPost.caption}
                 onChange={(e) => setSelectedPost({ ...selectedPost, caption: e.target.value })}
               />
-              
+
               <div className="flex items-center gap-3 mt-6 pt-6 border-t border-neutral-800">
                 <button onClick={() => setPostDeleteConfirm(true)} className="flex-1 py-3 px-4 rounded-xl text-red-400 hover:bg-red-500/10 font-bold text-sm transition-colors border border-transparent hover:border-red-500/30">
                   게시물 삭제
@@ -2313,17 +2369,17 @@ export default function App() {
           </button>
 
           <div className="relative w-full max-w-5xl h-[80vh] flex items-center justify-center group">
-            <button 
+            <button
               onClick={(e) => { e.stopPropagation(); setCurrentSlideIndex(prev => prev === 0 ? lightboxPost.images.length - 1 : prev - 1); }}
               className="absolute left-4 sm:left-[-60px] top-1/2 -translate-y-1/2 bg-black/40 hover:bg-neutral-800 text-white p-4 rounded-full transition-all flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 shadow-lg z-10 backdrop-blur-sm border border-white/10"
             >
               <ChevronLeft size={36} className="mr-1" />
             </button>
-            <img 
-              key={currentSlideIndex} src={lightboxPost.images[currentSlideIndex]} alt="Slide View" 
+            <img
+              key={currentSlideIndex} src={lightboxPost.images[currentSlideIndex]} alt="Slide View"
               className="max-w-full max-h-full object-contain select-none animate-in zoom-in-95 duration-300"
             />
-            <button 
+            <button
               onClick={(e) => { e.stopPropagation(); setCurrentSlideIndex(prev => prev === lightboxPost.images.length - 1 ? 0 : prev + 1); }}
               className="absolute right-4 sm:right-[-60px] top-1/2 -translate-y-1/2 bg-black/40 hover:bg-neutral-800 text-white p-4 rounded-full transition-all flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 shadow-lg z-10 backdrop-blur-sm border border-white/10"
             >
@@ -2333,7 +2389,7 @@ export default function App() {
 
           <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-3">
             {lightboxPost.images.map((_, idx) => (
-              <button 
+              <button
                 key={idx} onClick={() => setCurrentSlideIndex(idx)}
                 className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${idx === currentSlideIndex ? 'bg-lime-400 scale-125 shadow-[0_0_10px_rgba(163,230,53,0.5)]' : 'bg-white/30 hover:bg-white/60'}`}
               />
@@ -2346,7 +2402,7 @@ export default function App() {
       {editData && (
         <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
           <div className="bg-neutral-900 w-full max-w-3xl rounded-2xl shadow-2xl border border-neutral-800 flex flex-col max-h-[90vh]">
-            
+
             <div className="flex items-center justify-between p-5 md:p-6 border-b border-neutral-800">
               <div className="flex items-center gap-3">
                 <Settings className="w-5 h-5 text-lime-400" />
@@ -2370,9 +2426,9 @@ export default function App() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                 <div className="space-y-2">
                   <label className="block text-sm font-bold text-neutral-300">총 인원수</label>
-                  <select 
+                  <select
                     value={editData.headCount}
-                    onChange={(e) => setEditData({...editData, headCount: parseInt(e.target.value)})}
+                    onChange={(e) => setEditData({ ...editData, headCount: parseInt(e.target.value) })}
                     className="w-full bg-neutral-950 border border-neutral-700 rounded-lg p-3 focus:border-lime-500 outline-none text-white"
                   >
                     {[...Array(20)].map((_, i) => (
@@ -2383,9 +2439,9 @@ export default function App() {
 
                 <div className="space-y-2">
                   <label className="block text-sm font-bold text-neutral-300">부모 구성</label>
-                  <select 
+                  <select
                     value={editData.parents}
-                    onChange={(e) => setEditData({...editData, parents: e.target.value})}
+                    onChange={(e) => setEditData({ ...editData, parents: e.target.value })}
                     className="w-full bg-neutral-950 border border-neutral-700 rounded-lg p-3 focus:border-lime-500 outline-none text-white"
                   >
                     {PARENT_OPTIONS.map(opt => (
@@ -2396,9 +2452,9 @@ export default function App() {
 
                 <div className="space-y-2">
                   <label className="block text-sm font-bold text-neutral-300">조부모 구성</label>
-                  <select 
+                  <select
                     value={editData.grandparents}
-                    onChange={(e) => setEditData({...editData, grandparents: e.target.value})}
+                    onChange={(e) => setEditData({ ...editData, grandparents: e.target.value })}
                     className="w-full bg-neutral-950 border border-neutral-700 rounded-lg p-3 focus:border-lime-500 outline-none text-white"
                   >
                     {GRANDPARENT_OPTIONS.map(opt => (
@@ -2417,41 +2473,41 @@ export default function App() {
                     const count = selectedItem ? selectedItem.count : 0;
 
                     return (
-                      <div 
+                      <div
                         key={child.id}
                         className={`relative rounded-lg border transition-all overflow-hidden flex flex-col
                           ${isSelected ? 'bg-lime-400/10 border-lime-400' : 'bg-neutral-950 border-neutral-800 hover:border-neutral-600'}
                         `}
                       >
                         <button
-                            onClick={() => toggleEditChildTag(child.id)}
-                            className={`w-full p-3 text-left flex items-center gap-2 ${isSelected ? 'text-white' : 'text-neutral-400'}`}
+                          onClick={() => toggleEditChildTag(child.id)}
+                          className={`w-full p-3 text-left flex items-center gap-2 ${isSelected ? 'text-white' : 'text-neutral-400'}`}
                         >
-                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 ${isSelected ? 'border-lime-400 bg-lime-400' : 'border-neutral-600'}`}>
-                                {isSelected && <Check className="w-3 h-3 text-neutral-950" />}
-                            </div>
-                            <span className="truncate text-sm font-medium">{child.label}</span>
+                          <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 ${isSelected ? 'border-lime-400 bg-lime-400' : 'border-neutral-600'}`}>
+                            {isSelected && <Check className="w-3 h-3 text-neutral-950" />}
+                          </div>
+                          <span className="truncate text-sm font-medium">{child.label}</span>
                         </button>
 
                         {isSelected && (
-                            <div className="flex items-center justify-between bg-lime-900/30 px-3 py-1.5 border-t border-lime-500/30">
-                                <span className="text-xs text-lime-400 font-semibold">{count}명</span>
-                                <div className="flex items-center gap-1">
-                                    <button 
-                                        onClick={(e) => handleEditChildCountChange(e, child.id, -1)}
-                                        className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
-                                        disabled={count <= 1}
-                                    >
-                                        <Minus className="w-3 h-3" />
-                                    </button>
-                                    <button 
-                                        onClick={(e) => handleEditChildCountChange(e, child.id, 1)}
-                                        className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
-                                    >
-                                        <Plus className="w-3 h-3" />
-                                    </button>
-                                </div>
+                          <div className="flex items-center justify-between bg-lime-900/30 px-3 py-1.5 border-t border-lime-500/30">
+                            <span className="text-xs text-lime-400 font-semibold">{count}명</span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={(e) => handleEditChildCountChange(e, child.id, -1)}
+                                className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
+                                disabled={count <= 1}
+                              >
+                                <Minus className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={(e) => handleEditChildCountChange(e, child.id, 1)}
+                                className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
                             </div>
+                          </div>
                         )}
                       </div>
                     );
@@ -2459,64 +2515,64 @@ export default function App() {
                 </div>
               </div>
 
-               <div className="space-y-3">
+              <div className="space-y-3">
                 <label className="block text-sm font-bold text-neutral-300">반려동물</label>
                 <div className={`relative rounded-lg border transition-all overflow-hidden flex flex-col w-full md:w-1/2
                     ${editData.petCount > 0 ? 'bg-lime-400/10 border-lime-400' : 'bg-neutral-950 border-neutral-800 hover:border-neutral-600'}
                 `}>
-                     <button
-                        onClick={toggleEditPet}
-                        className={`w-full p-3 text-left flex items-center gap-2 ${editData.petCount > 0 ? 'text-white' : 'text-neutral-400'}`}
-                    >
-                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 ${editData.petCount > 0 ? 'border-lime-400 bg-lime-400' : 'border-neutral-600'}`}>
-                            {editData.petCount > 0 && <Check className="w-3 h-3 text-neutral-950" />}
-                        </div>
-                        <Dog className="w-4 h-4" />
-                        <span className="truncate text-sm font-medium">반려견</span>
-                    </button>
+                  <button
+                    onClick={toggleEditPet}
+                    className={`w-full p-3 text-left flex items-center gap-2 ${editData.petCount > 0 ? 'text-white' : 'text-neutral-400'}`}
+                  >
+                    <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 ${editData.petCount > 0 ? 'border-lime-400 bg-lime-400' : 'border-neutral-600'}`}>
+                      {editData.petCount > 0 && <Check className="w-3 h-3 text-neutral-950" />}
+                    </div>
+                    <Dog className="w-4 h-4" />
+                    <span className="truncate text-sm font-medium">반려견</span>
+                  </button>
 
-                    {editData.petCount > 0 && (
-                         <div className="flex items-center justify-between bg-lime-900/30 px-3 py-1.5 border-t border-lime-500/30">
-                            <span className="text-xs text-lime-400 font-semibold">{editData.petCount}마리</span>
-                            <div className="flex items-center gap-1">
-                                <button 
-                                    onClick={(e) => handleEditPetCountChange(e, -1)}
-                                    className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
-                                    disabled={editData.petCount <= 1}
-                                >
-                                    <Minus className="w-3 h-3" />
-                                </button>
-                                <button 
-                                    onClick={(e) => handleEditPetCountChange(e, 1)}
-                                    className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
-                                >
-                                    <Plus className="w-3 h-3" />
-                                </button>
-                            </div>
-                        </div>
-                    )}
+                  {editData.petCount > 0 && (
+                    <div className="flex items-center justify-between bg-lime-900/30 px-3 py-1.5 border-t border-lime-500/30">
+                      <span className="text-xs text-lime-400 font-semibold">{editData.petCount}마리</span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={(e) => handleEditPetCountChange(e, -1)}
+                          className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
+                          disabled={editData.petCount <= 1}
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={(e) => handleEditPetCountChange(e, 1)}
+                          className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-               </div>
+              </div>
 
-               <div className="space-y-2">
-                 <label className="block text-sm font-bold text-neutral-300">촬영 팁 / 메모</label>
-                 <textarea 
-                    value={editData.memo}
-                    onChange={(e) => setEditData({...editData, memo: e.target.value})}
-                    placeholder="예: 애플박스 2개 사용, 창가 자연광, 하이앵글 촬영 등"
-                    className="w-full bg-neutral-950 border border-neutral-700 rounded-lg p-3 text-sm text-white focus:border-lime-500 outline-none resize-none h-24 custom-scrollbar"
-                 />
-               </div>
+              <div className="space-y-2">
+                <label className="block text-sm font-bold text-neutral-300">촬영 팁 / 메모</label>
+                <textarea
+                  value={editData.memo}
+                  onChange={(e) => setEditData({ ...editData, memo: e.target.value })}
+                  placeholder="예: 애플박스 2개 사용, 창가 자연광, 하이앵글 촬영 등"
+                  className="w-full bg-neutral-950 border border-neutral-700 rounded-lg p-3 text-sm text-white focus:border-lime-500 outline-none resize-none h-24 custom-scrollbar"
+                />
+              </div>
             </div>
 
             <div className="p-4 md:p-6 border-t border-neutral-800 flex justify-end gap-3 bg-neutral-900 rounded-b-2xl">
-              <button 
+              <button
                 onClick={() => setEditData(null)}
                 className="px-4 md:px-6 py-2.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 font-medium transition-colors text-sm md:text-base"
               >
                 취소
               </button>
-              <button 
+              <button
                 onClick={handlePosingEditSave} disabled={isPosingUploading}
                 className="px-4 md:px-6 py-2.5 rounded-lg bg-lime-400 hover:bg-lime-500 text-neutral-950 font-medium shadow-lg hover:shadow-lime-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-all text-sm md:text-base"
               >
@@ -2532,15 +2588,15 @@ export default function App() {
       {isPosingUploadModalOpen && (
         <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
           <div className="bg-neutral-900 w-full max-w-3xl rounded-2xl shadow-2xl border border-neutral-800 flex flex-col max-h-[90vh]">
-            
+
             <div className="flex items-center justify-between p-5 md:p-6 border-b border-neutral-800">
               <div className="flex items-center gap-3">
                 <Upload className="w-5 h-5 text-lime-400 flex-shrink-0" />
                 <h2 className="text-lg md:text-xl font-bold text-white truncate">새 레퍼런 일괄 등록</h2>
                 {selectedImages.length > 0 && (
-                    <span className="hidden sm:inline-block bg-lime-400/20 text-lime-400 text-xs font-bold px-2.5 py-1 rounded-full border border-lime-400/30 whitespace-nowrap">
-                        {selectedImages.length}/10 장 선택됨
-                    </span>
+                  <span className="hidden sm:inline-block bg-lime-400/20 text-lime-400 text-xs font-bold px-2.5 py-1 rounded-full border border-lime-400/30 whitespace-nowrap">
+                    {selectedImages.length}/10 장 선택됨
+                  </span>
                 )}
               </div>
               <button onClick={() => setIsPosingUploadModalOpen(false)} className="text-neutral-400 hover:text-white p-1">
@@ -2549,27 +2605,27 @@ export default function App() {
             </div>
 
             <div className="p-5 md:p-6 overflow-y-auto flex-1 space-y-6 md:space-y-8 custom-scrollbar">
-              
+
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                    <label className="block text-sm font-bold text-neutral-300">사진 선택 (최대 10장)</label>
-                    {selectedImages.length > 0 && (
-                        <span className="sm:hidden bg-lime-400/20 text-lime-400 text-xs font-bold px-2 py-0.5 rounded-full border border-lime-400/30">
-                            {selectedImages.length}/10 장
-                        </span>
-                    )}
+                  <label className="block text-sm font-bold text-neutral-300">사진 선택 (최대 10장)</label>
+                  {selectedImages.length > 0 && (
+                    <span className="sm:hidden bg-lime-400/20 text-lime-400 text-xs font-bold px-2 py-0.5 rounded-full border border-lime-400/30">
+                      {selectedImages.length}/10 장
+                    </span>
+                  )}
                 </div>
-                
+
                 <div className="flex flex-wrap gap-3 md:gap-4">
                   {selectedImages.map((imgSrc, idx) => (
                     <div key={idx} className="relative w-20 h-28 md:w-28 md:h-36 rounded-lg border border-neutral-700 overflow-hidden group shadow-md bg-neutral-950">
-                        <img src={imgSrc} alt={`Preview ${idx}`} className="w-full h-full object-cover" />
-                        <button 
-                            onClick={() => removeSelectedImage(idx)} 
-                            className="absolute top-1.5 right-1.5 bg-black/60 text-white rounded-full p-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:bg-red-500"
-                        >
-                            <X className="w-3 h-3 md:w-4 md:h-4" />
-                        </button>
+                      <img src={imgSrc} alt={`Preview ${idx}`} className="w-full h-full object-cover" />
+                      <button
+                        onClick={() => removeSelectedImage(idx)}
+                        className="absolute top-1.5 right-1.5 bg-black/60 text-white rounded-full p-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:bg-red-500"
+                      >
+                        <X className="w-3 h-3 md:w-4 md:h-4" />
+                      </button>
                     </div>
                   ))}
 
@@ -2577,20 +2633,20 @@ export default function App() {
                     <label className={`w-20 h-28 md:w-28 md:h-36 rounded-lg border-2 border-dashed border-neutral-700 flex flex-col items-center justify-center cursor-pointer hover:border-lime-500 hover:bg-lime-400/5 transition-all
                         ${selectedImages.length === 0 ? 'w-full aspect-video md:aspect-auto' : ''}
                     `}>
-                        <ImageIcon className="w-6 h-6 md:w-8 md:h-8 text-neutral-500 mb-1 md:mb-2" />
-                        <span className="text-[10px] md:text-xs text-neutral-400 font-medium">
-                            {selectedImages.length === 0 ? '클릭하여 선택' : '사진 추가'}
-                        </span>
-                        <input type="file" accept="image/*" multiple onChange={handlePosingFileSelect} className="hidden" />
+                      <ImageIcon className="w-6 h-6 md:w-8 md:h-8 text-neutral-500 mb-1 md:mb-2" />
+                      <span className="text-[10px] md:text-xs text-neutral-400 font-medium">
+                        {selectedImages.length === 0 ? '클릭하여 선택' : '사진 추가'}
+                      </span>
+                      <input type="file" accept="image/*" multiple onChange={handlePosingFileSelect} className="hidden" />
                     </label>
                   )}
                 </div>
-                
+
                 {selectedImages.length === 0 && (
-                    <div className="text-xs md:text-sm text-neutral-400 pt-1">
-                        <p>한 가족의 다양한 포즈 컷을 여러 장 동시에 올려보세요.</p>
-                        <p className="text-lime-400 text-[10px] md:text-xs font-bold mt-1">* 한 번의 태그 설정으로 모든 사진에 동일하게 적용됩니다.</p>
-                    </div>
+                  <div className="text-xs md:text-sm text-neutral-400 pt-1">
+                    <p>한 가족의 다양한 포즈 컷을 여러 장 동시에 올려보세요.</p>
+                    <p className="text-lime-400 text-[10px] md:text-xs font-bold mt-1">* 한 번의 태그 설정으로 모든 사진에 동일하게 적용됩니다.</p>
+                  </div>
                 )}
               </div>
 
@@ -2599,9 +2655,9 @@ export default function App() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
                 <div className="space-y-2">
                   <label className="block text-sm font-bold text-neutral-300">총 인원수</label>
-                  <select 
+                  <select
                     value={uploadData.headCount}
-                    onChange={(e) => setUploadData({...uploadData, headCount: parseInt(e.target.value)})}
+                    onChange={(e) => setUploadData({ ...uploadData, headCount: parseInt(e.target.value) })}
                     className="w-full bg-neutral-950 border border-neutral-700 rounded-lg p-3 focus:border-lime-500 outline-none text-white"
                   >
                     {[...Array(20)].map((_, i) => (
@@ -2612,9 +2668,9 @@ export default function App() {
 
                 <div className="space-y-2">
                   <label className="block text-sm font-bold text-neutral-300">부모 구성</label>
-                  <select 
+                  <select
                     value={uploadData.parents}
-                    onChange={(e) => setUploadData({...uploadData, parents: e.target.value})}
+                    onChange={(e) => setUploadData({ ...uploadData, parents: e.target.value })}
                     className="w-full bg-neutral-950 border border-neutral-700 rounded-lg p-3 focus:border-lime-500 outline-none text-white"
                   >
                     {PARENT_OPTIONS.map(opt => (
@@ -2625,9 +2681,9 @@ export default function App() {
 
                 <div className="space-y-2">
                   <label className="block text-sm font-bold text-neutral-300">조부모 구성</label>
-                  <select 
+                  <select
                     value={uploadData.grandparents}
-                    onChange={(e) => setUploadData({...uploadData, grandparents: e.target.value})}
+                    onChange={(e) => setUploadData({ ...uploadData, grandparents: e.target.value })}
                     className="w-full bg-neutral-950 border border-neutral-700 rounded-lg p-3 focus:border-lime-500 outline-none text-white"
                   >
                     {GRANDPARENT_OPTIONS.map(opt => (
@@ -2646,41 +2702,41 @@ export default function App() {
                     const count = selectedItem ? selectedItem.count : 0;
 
                     return (
-                      <div 
+                      <div
                         key={child.id}
                         className={`relative rounded-lg border transition-all overflow-hidden flex flex-col
                           ${isSelected ? 'bg-lime-400/10 border-lime-400' : 'bg-neutral-950 border-neutral-800 hover:border-neutral-600'}
                         `}
                       >
                         <button
-                            onClick={() => toggleUploadChildTag(child.id)}
-                            className={`w-full p-3 text-left flex items-center gap-2 ${isSelected ? 'text-white' : 'text-neutral-400'}`}
+                          onClick={() => toggleUploadChildTag(child.id)}
+                          className={`w-full p-3 text-left flex items-center gap-2 ${isSelected ? 'text-white' : 'text-neutral-400'}`}
                         >
-                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 ${isSelected ? 'border-lime-400 bg-lime-400' : 'border-neutral-600'}`}>
-                                {isSelected && <Check className="w-3 h-3 text-neutral-950" />}
-                            </div>
-                            <span className="truncate text-sm font-medium">{child.label}</span>
+                          <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 ${isSelected ? 'border-lime-400 bg-lime-400' : 'border-neutral-600'}`}>
+                            {isSelected && <Check className="w-3 h-3 text-neutral-950" />}
+                          </div>
+                          <span className="truncate text-sm font-medium">{child.label}</span>
                         </button>
 
                         {isSelected && (
-                            <div className="flex items-center justify-between bg-lime-900/30 px-3 py-1.5 border-t border-lime-500/30">
-                                <span className="text-xs text-lime-400 font-semibold">{count}명</span>
-                                <div className="flex items-center gap-1">
-                                    <button 
-                                        onClick={(e) => handleUploadChildCountChange(e, child.id, -1)}
-                                        className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
-                                        disabled={count <= 1}
-                                    >
-                                        <Minus className="w-3 h-3" />
-                                    </button>
-                                    <button 
-                                        onClick={(e) => handleUploadChildCountChange(e, child.id, 1)}
-                                        className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
-                                    >
-                                        <Plus className="w-3 h-3" />
-                                    </button>
-                                </div>
+                          <div className="flex items-center justify-between bg-lime-900/30 px-3 py-1.5 border-t border-lime-500/30">
+                            <span className="text-xs text-lime-400 font-semibold">{count}명</span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={(e) => handleUploadChildCountChange(e, child.id, -1)}
+                                className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
+                                disabled={count <= 1}
+                              >
+                                <Minus className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={(e) => handleUploadChildCountChange(e, child.id, 1)}
+                                className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
                             </div>
+                          </div>
                         )}
                       </div>
                     );
@@ -2688,64 +2744,64 @@ export default function App() {
                 </div>
               </div>
 
-               <div className="space-y-3">
+              <div className="space-y-3">
                 <label className="block text-sm font-bold text-neutral-300">반려동물</label>
                 <div className={`relative rounded-lg border transition-all overflow-hidden flex flex-col w-full sm:w-1/2 md:w-1/3
                     ${uploadData.petCount > 0 ? 'bg-lime-400/10 border-lime-400' : 'bg-neutral-950 border-neutral-800 hover:border-neutral-600'}
                 `}>
-                     <button
-                        onClick={toggleUploadPet}
-                        className={`w-full p-3 text-left flex items-center gap-2 ${uploadData.petCount > 0 ? 'text-white' : 'text-neutral-400'}`}
-                    >
-                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 ${uploadData.petCount > 0 ? 'border-lime-400 bg-lime-400' : 'border-neutral-600'}`}>
-                            {uploadData.petCount > 0 && <Check className="w-3 h-3 text-neutral-950" />}
-                        </div>
-                        <Dog className="w-4 h-4" />
-                        <span className="truncate text-sm font-medium">반려견</span>
-                    </button>
+                  <button
+                    onClick={toggleUploadPet}
+                    className={`w-full p-3 text-left flex items-center gap-2 ${uploadData.petCount > 0 ? 'text-white' : 'text-neutral-400'}`}
+                  >
+                    <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 ${uploadData.petCount > 0 ? 'border-lime-400 bg-lime-400' : 'border-neutral-600'}`}>
+                      {uploadData.petCount > 0 && <Check className="w-3 h-3 text-neutral-950" />}
+                    </div>
+                    <Dog className="w-4 h-4" />
+                    <span className="truncate text-sm font-medium">반려견</span>
+                  </button>
 
-                    {uploadData.petCount > 0 && (
-                         <div className="flex items-center justify-between bg-lime-900/30 px-3 py-1.5 border-t border-lime-500/30">
-                            <span className="text-xs text-lime-400 font-semibold">{uploadData.petCount}마리</span>
-                            <div className="flex items-center gap-1">
-                                <button 
-                                    onClick={(e) => handleUploadPetCountChange(e, -1)}
-                                    className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
-                                    disabled={uploadData.petCount <= 1}
-                                >
-                                    <Minus className="w-3 h-3" />
-                                </button>
-                                <button 
-                                    onClick={(e) => handleUploadPetCountChange(e, 1)}
-                                    className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
-                                >
-                                    <Plus className="w-3 h-3" />
-                                </button>
-                            </div>
-                        </div>
-                    )}
+                  {uploadData.petCount > 0 && (
+                    <div className="flex items-center justify-between bg-lime-900/30 px-3 py-1.5 border-t border-lime-500/30">
+                      <span className="text-xs text-lime-400 font-semibold">{uploadData.petCount}마리</span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={(e) => handleUploadPetCountChange(e, -1)}
+                          className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
+                          disabled={uploadData.petCount <= 1}
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={(e) => handleUploadPetCountChange(e, 1)}
+                          className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-               </div>
+              </div>
 
-               <div className="space-y-2">
-                 <label className="block text-sm font-bold text-neutral-300">촬영 팁 / 메모 <span className="text-neutral-500 font-normal">(선택사항)</span></label>
-                 <textarea 
-                    value={uploadData.memo}
-                    onChange={(e) => setUploadData({...uploadData, memo: e.target.value})}
-                    placeholder="예: 애플박스 2개 사용, 창가 자연광, 하이앵글 촬영 등"
-                    className="w-full bg-neutral-950 border border-neutral-700 rounded-lg p-3 text-sm text-white focus:border-lime-500 outline-none resize-none h-24 custom-scrollbar"
-                 />
-               </div>
+              <div className="space-y-2">
+                <label className="block text-sm font-bold text-neutral-300">촬영 팁 / 메모 <span className="text-neutral-500 font-normal">(선택사항)</span></label>
+                <textarea
+                  value={uploadData.memo}
+                  onChange={(e) => setUploadData({ ...uploadData, memo: e.target.value })}
+                  placeholder="예: 애플박스 2개 사용, 창가 자연광, 하이앵글 촬영 등"
+                  className="w-full bg-neutral-950 border border-neutral-700 rounded-lg p-3 text-sm text-white focus:border-lime-500 outline-none resize-none h-24 custom-scrollbar"
+                />
+              </div>
             </div>
 
             <div className="p-4 md:p-6 border-t border-neutral-800 flex justify-end gap-3 bg-neutral-900 rounded-b-2xl">
-              <button 
+              <button
                 onClick={() => setIsPosingUploadModalOpen(false)}
                 className="px-4 md:px-6 py-2.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 font-medium transition-colors text-sm md:text-base"
               >
                 취소
               </button>
-              <button 
+              <button
                 onClick={handlePosingUpload} disabled={selectedImages.length === 0 || isPosingUploading}
                 className="px-4 md:px-6 py-2.5 rounded-lg bg-lime-400 hover:bg-lime-500 text-neutral-950 font-medium shadow-lg hover:shadow-lime-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-all text-sm md:text-base"
               >
@@ -2762,32 +2818,32 @@ export default function App() {
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/95 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={() => setViewingPhotoId(null)}>
           {filteredPhotos.length > 1 && (
             <>
-                <button onClick={handlePrevPhoto} className="absolute left-2 md:left-6 top-1/2 -translate-y-1/2 p-3 md:p-4 text-white bg-black/60 hover:bg-black/80 rounded-full transition-all z-[120] shadow-2xl backdrop-blur-md">
-                    <ChevronLeft className="w-7 h-7 md:w-10 md:h-10 drop-shadow-lg" />
-                </button>
-                <button onClick={handleNextPhoto} className="absolute right-2 md:right-6 top-1/2 -translate-y-1/2 p-3 md:p-4 text-white bg-black/60 hover:bg-black/80 rounded-full transition-all z-[120] shadow-2xl backdrop-blur-md">
-                    <ChevronRight className="w-7 h-7 md:w-10 md:h-10 drop-shadow-lg" />
-                </button>
+              <button onClick={handlePrevPhoto} className="absolute left-2 md:left-6 top-1/2 -translate-y-1/2 p-3 md:p-4 text-white bg-black/60 hover:bg-black/80 rounded-full transition-all z-[120] shadow-2xl backdrop-blur-md">
+                <ChevronLeft className="w-7 h-7 md:w-10 md:h-10 drop-shadow-lg" />
+              </button>
+              <button onClick={handleNextPhoto} className="absolute right-2 md:right-6 top-1/2 -translate-y-1/2 p-3 md:p-4 text-white bg-black/60 hover:bg-black/80 rounded-full transition-all z-[120] shadow-2xl backdrop-blur-md">
+                <ChevronRight className="w-7 h-7 md:w-10 md:h-10 drop-shadow-lg" />
+              </button>
             </>
           )}
           <div className="absolute top-4 right-4 md:top-6 md:right-6 flex items-center gap-3 z-[120]">
-             <button onClick={(e) => handleOpenEditModal(e, viewingPhoto)} className="flex items-center gap-1.5 md:gap-2 px-3 py-1.5 rounded-full transition-all backdrop-blur-sm border bg-white/10 border-white/10 text-white hover:bg-white/20">
-                <Settings className="w-4 h-4" /> <span className="text-xs font-bold hidden md:inline">설정 수정</span>
-             </button>
-             <button onClick={(e) => handleToggleFavorite(e, viewingPhoto.id, viewingPhoto.isFavorite)} className={`flex items-center gap-1.5 md:gap-2 px-3 py-1.5 rounded-full transition-all backdrop-blur-sm border ${viewingPhoto.isFavorite ? 'bg-lime-400/20 border-lime-400 text-lime-400' : 'bg-white/10 border-white/10 text-white hover:bg-white/20'}`}>
-                <Heart className={`w-4 h-4 ${viewingPhoto.isFavorite ? 'fill-current' : ''}`} /> <span className="text-xs font-bold hidden md:inline">{viewingPhoto.isFavorite ? '즐겨찾기 취소' : '즐겨찾기'}</span>
-             </button>
-             <button onClick={() => setViewingPhotoId(null)} className="p-1.5 md:p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-colors ml-1">
-               <X className="w-6 h-6 md:w-8 md:h-8" />
-             </button>
+            <button onClick={(e) => handleOpenEditModal(e, viewingPhoto)} className="flex items-center gap-1.5 md:gap-2 px-3 py-1.5 rounded-full transition-all backdrop-blur-sm border bg-white/10 border-white/10 text-white hover:bg-white/20">
+              <Settings className="w-4 h-4" /> <span className="text-xs font-bold hidden md:inline">설정 수정</span>
+            </button>
+            <button onClick={(e) => handleToggleFavorite(e, viewingPhoto.id, viewingPhoto.isFavorite)} className={`flex items-center gap-1.5 md:gap-2 px-3 py-1.5 rounded-full transition-all backdrop-blur-sm border ${viewingPhoto.isFavorite ? 'bg-lime-400/20 border-lime-400 text-lime-400' : 'bg-white/10 border-white/10 text-white hover:bg-white/20'}`}>
+              <Heart className={`w-4 h-4 ${viewingPhoto.isFavorite ? 'fill-current' : ''}`} /> <span className="text-xs font-bold hidden md:inline">{viewingPhoto.isFavorite ? '즐겨찾기 취소' : '즐겨찾기'}</span>
+            </button>
+            <button onClick={() => setViewingPhotoId(null)} className="p-1.5 md:p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-colors ml-1">
+              <X className="w-6 h-6 md:w-8 md:h-8" />
+            </button>
           </div>
           <div className="relative w-full h-full flex flex-col items-center justify-center pt-16 pb-20 md:pt-0 md:pb-0" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onClick={(e) => e.stopPropagation()}>
             <img src={viewingPhoto.imageUrl} alt="Full Size Reference" className="w-auto h-auto max-w-full max-h-[75vh] md:max-h-[85vh] object-contain rounded-sm shadow-2xl select-none" />
             {viewingPhoto.memo && (
-                <div className="absolute bottom-[80px] left-4 right-4 md:bottom-4 md:left-auto md:right-auto bg-black/70 backdrop-blur-md px-4 md:px-6 py-3 md:py-4 rounded-xl border border-white/10 shadow-2xl text-center md:max-w-2xl z-10">
-                    <div className="flex items-center justify-center gap-2 mb-1"><AlignLeft className="w-4 h-4 text-lime-400" /><span className="text-[10px] md:text-xs font-bold text-lime-400 uppercase tracking-widest">촬영 팁</span></div>
-                    <p className="text-white text-xs md:text-sm leading-relaxed">{viewingPhoto.memo}</p>
-                </div>
+              <div className="absolute bottom-[80px] left-4 right-4 md:bottom-4 md:left-auto md:right-auto bg-black/70 backdrop-blur-md px-4 md:px-6 py-3 md:py-4 rounded-xl border border-white/10 shadow-2xl text-center md:max-w-2xl z-10">
+                <div className="flex items-center justify-center gap-2 mb-1"><AlignLeft className="w-4 h-4 text-lime-400" /><span className="text-[10px] md:text-xs font-bold text-lime-400 uppercase tracking-widest">촬영 팁</span></div>
+                <p className="text-white text-xs md:text-sm leading-relaxed">{viewingPhoto.memo}</p>
+              </div>
             )}
             <div className="absolute bottom-8 left-1/2 -translate-x-1/2 text-white/40 text-xs px-4 py-2 bg-black/40 rounded-full backdrop-blur-md md:hidden z-10 flex items-center gap-2">좌우로 스와이프 하거나 화살표 터치</div>
           </div>
@@ -2797,31 +2853,31 @@ export default function App() {
       {/* Posing Library - Mobile Filter Bottom Sheet */}
       {currentView === 'posing' && isMobileFilterOpen && (
         <div className="fixed inset-0 z-[100] flex flex-col justify-end bg-black/80 backdrop-blur-sm lg:hidden animate-in fade-in duration-200">
-            <div className="absolute inset-0" onClick={() => setIsMobileFilterOpen(false)} />
-            <div className="bg-neutral-900 w-full rounded-t-2xl shadow-2xl border-t border-neutral-800 flex flex-col max-h-[85vh] relative z-10 animate-in slide-in-from-bottom-full duration-300">
-                <div className="flex items-center justify-between p-5 border-b border-neutral-800">
-                    <div className="flex items-center gap-2"><Filter className="w-5 h-5 text-lime-400" /><h2 className="font-bold text-lg text-white">필터 검색</h2></div>
-                    <button onClick={() => setIsMobileFilterOpen(false)} className="text-neutral-400 hover:text-white p-1"><X className="w-6 h-6" /></button>
-                </div>
-                <div className="p-5 overflow-y-auto pb-24 custom-scrollbar"><FilterContentControls /></div>
-                <div className="absolute bottom-0 w-full p-4 bg-gradient-to-t from-neutral-900 via-neutral-900 to-transparent pt-10">
-                    <button onClick={() => setIsMobileFilterOpen(false)} className="w-full py-3.5 bg-lime-400 hover:bg-lime-500 text-neutral-950 font-bold rounded-xl shadow-lg flex items-center justify-center gap-2">{filteredPhotos.length}개의 시안 보기</button>
-                </div>
+          <div className="absolute inset-0" onClick={() => setIsMobileFilterOpen(false)} />
+          <div className="bg-neutral-900 w-full rounded-t-2xl shadow-2xl border-t border-neutral-800 flex flex-col max-h-[85vh] relative z-10 animate-in slide-in-from-bottom-full duration-300">
+            <div className="flex items-center justify-between p-5 border-b border-neutral-800">
+              <div className="flex items-center gap-2"><Filter className="w-5 h-5 text-lime-400" /><h2 className="font-bold text-lg text-white">필터 검색</h2></div>
+              <button onClick={() => setIsMobileFilterOpen(false)} className="text-neutral-400 hover:text-white p-1"><X className="w-6 h-6" /></button>
             </div>
+            <div className="p-5 overflow-y-auto pb-24 custom-scrollbar"><FilterContentControls /></div>
+            <div className="absolute bottom-0 w-full p-4 bg-gradient-to-t from-neutral-900 via-neutral-900 to-transparent pt-10">
+              <button onClick={() => setIsMobileFilterOpen(false)} className="w-full py-3.5 bg-lime-400 hover:bg-lime-500 text-neutral-950 font-bold rounded-xl shadow-lg flex items-center justify-center gap-2">{filteredPhotos.length}개의 시안 보기</button>
+            </div>
+          </div>
         </div>
       )}
 
       {/* ==========================================
           [Overlays & Modals] 공통 컴포넌트
           ========================================== */}
-      
+
       {/* Thread Lightbox */}
       {threadLightboxMedia && (
         <div className="fixed inset-0 z-[200] bg-black flex items-center justify-center animate-in fade-in duration-200">
           <button onClick={() => setThreadLightboxMedia(null)} className="absolute top-6 left-6 text-white hover:text-lime-400 p-2 z-10 transition-colors bg-black/40 rounded-full">
             <X size={32} />
           </button>
-          
+
           <div className="w-full h-full p-4 md:p-12 flex items-center justify-center">
             {threadLightboxMedia.type === 'image' ? (
               <img src={threadLightboxMedia.url} alt="Fullscreen View" className="max-w-full max-h-full object-contain" />
@@ -2847,7 +2903,7 @@ export default function App() {
           <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl max-w-sm w-full text-center shadow-2xl">
             <h3 className="text-xl font-bold text-white mb-2">계정 삭제</h3>
             <p className="text-neutral-400 mb-6 text-sm leading-relaxed">
-              <strong className="text-white">'{deleteConfirmAcc}'</strong> 계정과<br/>관련된 모든 그리드 데이터가 삭제됩니다.<br/>계속하시겠습니까?
+              <strong className="text-white">'{deleteConfirmAcc}'</strong> 계정과<br />관련된 모든 그리드 데이터가 삭제됩니다.<br />계속하시겠습니까?
             </p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteConfirmAcc(null)} className="flex-1 bg-neutral-800 hover:bg-neutral-700 text-white px-4 py-3 rounded-xl font-bold transition-colors">취소</button>
@@ -2875,7 +2931,7 @@ export default function App() {
           <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl max-w-sm w-full text-center shadow-2xl">
             <h3 className="text-xl font-bold text-white mb-2">스레드 계정 삭제</h3>
             <p className="text-neutral-400 mb-6 text-sm leading-relaxed">
-              <strong className="text-white">'{deleteConfirmThreadAcc}'</strong> 계정과<br/>관련된 모든 스레드 데이터가 삭제됩니다.<br/>계속하시겠습니까?
+              <strong className="text-white">'{deleteConfirmThreadAcc}'</strong> 계정과<br />관련된 모든 스레드 데이터가 삭제됩니다.<br />계속하시겠습니까?
             </p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteConfirmThreadAcc(null)} className="flex-1 bg-neutral-800 hover:bg-neutral-700 text-white px-4 py-3 rounded-xl font-bold transition-colors">취소</button>
@@ -2890,7 +2946,7 @@ export default function App() {
           <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl max-w-sm w-full text-center shadow-2xl">
             <h3 className="text-xl font-bold text-white mb-2">블로그 계정 삭제</h3>
             <p className="text-neutral-400 mb-6 text-sm leading-relaxed">
-              <strong className="text-white">'{deleteConfirmBlogAcc}'</strong> 계정과<br/>관련된 모든 블로그 데이터가 삭제됩니다.<br/>계속하시겠습니까?
+              <strong className="text-white">'{deleteConfirmBlogAcc}'</strong> 계정과<br />관련된 모든 블로그 데이터가 삭제됩니다.<br />계속하시겠습니까?
             </p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteConfirmBlogAcc(null)} className="flex-1 bg-neutral-800 hover:bg-neutral-700 text-white px-4 py-3 rounded-xl font-bold transition-colors">취소</button>
@@ -2905,7 +2961,7 @@ export default function App() {
           <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl max-w-sm w-full text-center shadow-2xl">
             <h3 className="text-xl font-bold text-white mb-2">필터 삭제</h3>
             <p className="text-neutral-400 mb-6 text-sm">
-              <strong className="text-white">'{deleteConfirmCategory}'</strong> 필터를 삭제하시겠습니까?<br/>
+              <strong className="text-white">'{deleteConfirmCategory}'</strong> 필터를 삭제하시겠습니까?<br />
               <span className="text-xs text-neutral-500 mt-1 block">(사진에 등록된 태그 자체는 유지됩니다.)</span>
             </p>
             <div className="flex gap-3">
@@ -2916,7 +2972,8 @@ export default function App() {
         </div>
       )}
 
-      <style dangerouslySetInnerHTML={{__html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background-color: rgba(163, 230, 53, 0.2); border-radius: 20px; }
