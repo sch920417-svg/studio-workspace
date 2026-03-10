@@ -233,6 +233,9 @@ export default function App() {
   const [newAccountName, setNewAccountName] = useState('');
   const [newThreadAccountName, setNewThreadAccountName] = useState('');
   const [newBlogAccountName, setNewBlogAccountName] = useState('');
+  const [editingIgAcc, setEditingIgAcc] = useState(null); 
+  const [editingThreadAcc, setEditingThreadAcc] = useState(null); 
+  const [editingBlogAcc, setEditingBlogAcc] = useState(null); 
   const [aiPrompt, setAiPrompt] = useState(DEFAULT_AI_PROMPT);
   const [tempPrompt, setTempPrompt] = useState(DEFAULT_AI_PROMPT);
   const [alertMessage, setAlertMessage] = useState('');
@@ -473,7 +476,7 @@ export default function App() {
   };
 
   const handleDeleteAccount = (accountToDelete) => {
-    if (accounts.length <= 1) { setAlertMessage('최소 1개의 계정은 유지해야 합니다.'); return; }
+    if (accounts.length <= 1) { setAlertMessage('최소 1개의 계정은 유지해야 합니다. 다른 계정을 추가한 후 삭제해주세요.'); return; }
     setDeleteConfirmAcc(accountToDelete);
   };
 
@@ -488,6 +491,27 @@ export default function App() {
     });
   };
 
+  const handleEditIgAccount = async (e) => {
+    e.preventDefault();
+    if (!editingIgAcc || !editingIgAcc.newName.trim()) return;
+    const newName = editingIgAcc.newName.trim();
+    const oldName = editingIgAcc.oldName;
+
+    if (newName === oldName) { setEditingIgAcc(null); return; }
+    if (accounts.includes(newName)) { setAlertMessage('이미 존재하는 계정 이름입니다.'); return; }
+
+    const updatedAccounts = accounts.map(a => a === oldName ? newName : a);
+    await saveSettingsToDB({ accounts: updatedAccounts });
+
+    if (activeAccount === oldName) setActiveAccount(newName);
+
+    // 연관 데이터 마이그레이션 (Grid)
+    allGrids.filter(p => p.account === oldName).forEach(async p => {
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'grids', p.id), { account: newName });
+    });
+    setEditingIgAcc(null);
+  };
+
   const handleAddThreadAccount = async (e) => {
     e.preventDefault();
     if (!newThreadAccountName.trim()) return;
@@ -498,7 +522,7 @@ export default function App() {
   };
 
   const handleDeleteThreadAccount = (acc) => {
-    if (threadAccounts.length <= 1) { setAlertMessage('최소 1개의 계정은 유지해야 합니다.'); return; }
+    if (threadAccounts.length <= 1) { setAlertMessage('최소 1개의 계정은 유지해야 합니다. 다른 계정을 추가한 후 삭제해주세요.'); return; }
     setDeleteConfirmThreadAcc(acc);
   };
 
@@ -512,6 +536,27 @@ export default function App() {
     });
   };
 
+  const handleEditThreadAccount = async (e) => {
+    e.preventDefault();
+    if (!editingThreadAcc || !editingThreadAcc.newName.trim()) return;
+    const newName = editingThreadAcc.newName.trim();
+    const oldName = editingThreadAcc.oldName;
+
+    if (newName === oldName) { setEditingThreadAcc(null); return; }
+    if (threadAccounts.includes(newName)) { setAlertMessage('이미 존재하는 스레드 계정 이름입니다.'); return; }
+
+    const updatedAccounts = threadAccounts.map(a => a === oldName ? newName : a);
+    await saveSettingsToDB({ threadAccounts: updatedAccounts });
+
+    if (activeThreadAccount === oldName) setActiveThreadAccount(newName);
+
+    // 연관 데이터 마이그레이션 (Thread)
+    threads.filter(t => (t.account || '메인 계정') === oldName).forEach(async t => {
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'threads', t.id), { account: newName });
+    });
+    setEditingThreadAcc(null);
+  };
+
   const handleAddBlogAccount = async (e) => {
     e.preventDefault();
     if (!newBlogAccountName.trim()) return;
@@ -522,7 +567,7 @@ export default function App() {
   };
 
   const handleDeleteBlogAccount = (acc) => {
-    if (blogAccounts.length <= 1) { setAlertMessage('최소 1개의 계정은 유지해야 합니다.'); return; }
+    if (blogAccounts.length <= 1) { setAlertMessage('최소 1개의 계정은 유지해야 합니다. 다른 계정을 추가한 후 삭제해주세요.'); return; }
     setDeleteConfirmBlogAcc(acc);
   };
 
@@ -534,6 +579,27 @@ export default function App() {
     blogs.filter(b => (b.account || '메인 계정') === deleteConfirmBlogAcc).forEach(async b => {
         await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'blogs', b.id));
     });
+  };
+
+  const handleEditBlogAccount = async (e) => {
+    e.preventDefault();
+    if (!editingBlogAcc || !editingBlogAcc.newName.trim()) return;
+    const newName = editingBlogAcc.newName.trim();
+    const oldName = editingBlogAcc.oldName;
+
+    if (newName === oldName) { setEditingBlogAcc(null); return; }
+    if (blogAccounts.includes(newName)) { setAlertMessage('이미 존재하는 블로그 계정 이름입니다.'); return; }
+
+    const updatedAccounts = blogAccounts.map(a => a === oldName ? newName : a);
+    await saveSettingsToDB({ blogAccounts: updatedAccounts });
+
+    if (activeBlogAccount === oldName) setActiveBlogAccount(newName);
+
+    // 연관 데이터 마이그레이션 (Blog)
+    blogs.filter(b => (b.account || '메인 계정') === oldName).forEach(async b => {
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'blogs', b.id), { account: newName });
+    });
+    setEditingBlogAcc(null);
   };
 
   // 구글 드라이브 연동 / 해제 로직 (시뮬레이션)
@@ -1977,9 +2043,10 @@ export default function App() {
             <div className="space-y-10 animate-in fade-in duration-500 max-w-3xl mx-auto pb-24">
               <header>
                 <h2 className="text-3xl font-bold text-white mb-2 flex items-center gap-3"><Settings className="text-lime-400" size={32} /> 환경 설정</h2>
-                <p className="text-neutral-400">인스타그램 다중 계정 및 아카이브 시스템 관리를 설정합니다.</p>
+                <p className="text-neutral-400">인스타그램, 스레드, 블로그 다중 계정 및 아카이브 시스템을 설정합니다.</p>
               </header>
 
+              {/* 1. 인스타그램 계정 관리 */}
               <section className="bg-neutral-900 border border-neutral-800 rounded-3xl p-8">
                 <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2"><Instagram className="text-purple-400" size={24} /> 인스타그램 계정 관리</h3>
                 <form onSubmit={handleAddAccount} className="flex gap-3 mb-8">
@@ -1989,14 +2056,28 @@ export default function App() {
                 <div className="space-y-3">
                   <div className="text-sm font-semibold text-neutral-500 px-2">등록된 계정 목록 ({accounts.length})</div>
                   {accounts.map(acc => (
-                    <div key={acc} className="flex items-center justify-between bg-neutral-950 border border-neutral-800 p-4 rounded-xl">
-                      <div className="flex items-center gap-3"><div className="w-10 h-10 bg-neutral-800 rounded-full flex items-center justify-center"><Instagram size={18} className="text-neutral-400" /></div><span className="font-medium text-neutral-200">{acc}</span></div>
-                      <button onClick={() => handleDeleteAccount(acc)} className="p-2 text-neutral-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"><Trash2 size={18} /></button>
+                    <div key={acc} className="flex items-center justify-between bg-neutral-950 border border-neutral-800 p-4 rounded-xl min-h-[74px]">
+                      {editingIgAcc?.oldName === acc ? (
+                        <form onSubmit={handleEditIgAccount} className="flex flex-1 gap-2">
+                          <input autoFocus type="text" value={editingIgAcc.newName} onChange={(e) => setEditingIgAcc({...editingIgAcc, newName: e.target.value})} className="flex-1 bg-neutral-900 border border-lime-500 rounded-lg px-3 py-1.5 text-white outline-none text-sm" />
+                          <button type="submit" className="bg-lime-400 hover:bg-lime-500 text-black px-4 py-1.5 rounded-lg text-sm font-bold whitespace-nowrap transition-colors">저장</button>
+                          <button type="button" onClick={() => setEditingIgAcc(null)} className="bg-neutral-800 hover:bg-neutral-700 text-white px-4 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors">취소</button>
+                        </form>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-3"><div className="w-10 h-10 bg-neutral-800 rounded-full flex items-center justify-center shrink-0"><Instagram size={18} className="text-neutral-400" /></div><span className="font-medium text-neutral-200 break-all line-clamp-1">{acc}</span></div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button onClick={() => setEditingIgAcc({oldName: acc, newName: acc})} className="p-2 text-neutral-500 hover:text-lime-400 hover:bg-lime-400/10 rounded-lg transition-colors" title="수정"><Edit2 size={18} /></button>
+                            <button onClick={() => handleDeleteAccount(acc)} className="p-2 text-neutral-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors" title="삭제"><Trash2 size={18} /></button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>
               </section>
 
+              {/* 2. 스레드 계정 관리 */}
               <section className="bg-neutral-900 border border-neutral-800 rounded-3xl p-8">
                 <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2"><MessageCircle className="text-blue-400" size={24} /> 스레드 계정 관리</h3>
                 <form onSubmit={handleAddThreadAccount} className="flex gap-3 mb-8">
@@ -2006,14 +2087,28 @@ export default function App() {
                 <div className="space-y-3">
                   <div className="text-sm font-semibold text-neutral-500 px-2">등록된 계정 목록 ({threadAccounts.length})</div>
                   {threadAccounts.map(acc => (
-                    <div key={acc} className="flex items-center justify-between bg-neutral-950 border border-neutral-800 p-4 rounded-xl">
-                      <div className="flex items-center gap-3"><div className="w-10 h-10 bg-neutral-800 rounded-full flex items-center justify-center"><MessageCircle size={18} className="text-neutral-400" /></div><span className="font-medium text-neutral-200">{acc}</span></div>
-                      <button onClick={() => handleDeleteThreadAccount(acc)} className="p-2 text-neutral-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"><Trash2 size={18} /></button>
+                    <div key={acc} className="flex items-center justify-between bg-neutral-950 border border-neutral-800 p-4 rounded-xl min-h-[74px]">
+                      {editingThreadAcc?.oldName === acc ? (
+                        <form onSubmit={handleEditThreadAccount} className="flex flex-1 gap-2">
+                          <input autoFocus type="text" value={editingThreadAcc.newName} onChange={(e) => setEditingThreadAcc({...editingThreadAcc, newName: e.target.value})} className="flex-1 bg-neutral-900 border border-lime-500 rounded-lg px-3 py-1.5 text-white outline-none text-sm" />
+                          <button type="submit" className="bg-lime-400 hover:bg-lime-500 text-black px-4 py-1.5 rounded-lg text-sm font-bold whitespace-nowrap transition-colors">저장</button>
+                          <button type="button" onClick={() => setEditingThreadAcc(null)} className="bg-neutral-800 hover:bg-neutral-700 text-white px-4 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors">취소</button>
+                        </form>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-3"><div className="w-10 h-10 bg-neutral-800 rounded-full flex items-center justify-center shrink-0"><MessageCircle size={18} className="text-neutral-400" /></div><span className="font-medium text-neutral-200 break-all line-clamp-1">{acc}</span></div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button onClick={() => setEditingThreadAcc({oldName: acc, newName: acc})} className="p-2 text-neutral-500 hover:text-lime-400 hover:bg-lime-400/10 rounded-lg transition-colors" title="수정"><Edit2 size={18} /></button>
+                            <button onClick={() => handleDeleteThreadAccount(acc)} className="p-2 text-neutral-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors" title="삭제"><Trash2 size={18} /></button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>
               </section>
 
+              {/* 3. 블로그 계정 관리 */}
               <section className="bg-neutral-900 border border-neutral-800 rounded-3xl p-8">
                 <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2"><FileText className="text-orange-400" size={24} /> 블로그 계정 관리</h3>
                 <form onSubmit={handleAddBlogAccount} className="flex gap-3 mb-8">
@@ -2023,14 +2118,28 @@ export default function App() {
                 <div className="space-y-3">
                   <div className="text-sm font-semibold text-neutral-500 px-2">등록된 계정 목록 ({blogAccounts.length})</div>
                   {blogAccounts.map(acc => (
-                    <div key={acc} className="flex items-center justify-between bg-neutral-950 border border-neutral-800 p-4 rounded-xl">
-                      <div className="flex items-center gap-3"><div className="w-10 h-10 bg-neutral-800 rounded-full flex items-center justify-center"><FileText size={18} className="text-neutral-400" /></div><span className="font-medium text-neutral-200">{acc}</span></div>
-                      <button onClick={() => handleDeleteBlogAccount(acc)} className="p-2 text-neutral-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"><Trash2 size={18} /></button>
+                    <div key={acc} className="flex items-center justify-between bg-neutral-950 border border-neutral-800 p-4 rounded-xl min-h-[74px]">
+                      {editingBlogAcc?.oldName === acc ? (
+                        <form onSubmit={handleEditBlogAccount} className="flex flex-1 gap-2">
+                          <input autoFocus type="text" value={editingBlogAcc.newName} onChange={(e) => setEditingBlogAcc({...editingBlogAcc, newName: e.target.value})} className="flex-1 bg-neutral-900 border border-lime-500 rounded-lg px-3 py-1.5 text-white outline-none text-sm" />
+                          <button type="submit" className="bg-lime-400 hover:bg-lime-500 text-black px-4 py-1.5 rounded-lg text-sm font-bold whitespace-nowrap transition-colors">저장</button>
+                          <button type="button" onClick={() => setEditingBlogAcc(null)} className="bg-neutral-800 hover:bg-neutral-700 text-white px-4 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors">취소</button>
+                        </form>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-3"><div className="w-10 h-10 bg-neutral-800 rounded-full flex items-center justify-center shrink-0"><FileText size={18} className="text-neutral-400" /></div><span className="font-medium text-neutral-200 break-all line-clamp-1">{acc}</span></div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button onClick={() => setEditingBlogAcc({oldName: acc, newName: acc})} className="p-2 text-neutral-500 hover:text-lime-400 hover:bg-lime-400/10 rounded-lg transition-colors" title="수정"><Edit2 size={18} /></button>
+                            <button onClick={() => handleDeleteBlogAccount(acc)} className="p-2 text-neutral-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors" title="삭제"><Trash2 size={18} /></button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>
               </section>
 
+              {/* 4. 구글 드라이브 연동 */}
               <section className="bg-neutral-900 border border-neutral-800 rounded-3xl p-8">
                 <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2"><HardDrive className="text-blue-400" size={24} /> 구글 드라이브 연동</h3>
                 <div className="space-y-4">
@@ -2058,6 +2167,7 @@ export default function App() {
                 </div>
               </section>
 
+              {/* 5. AI 태깅 프롬프트 설정 */}
               <section className="bg-neutral-900 border border-neutral-800 rounded-3xl p-8">
                 <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2"><BrainCircuit className="text-lime-400" size={24} /> AI 태깅 프롬프트 설정</h3>
                 <div className="space-y-4">
@@ -2069,6 +2179,7 @@ export default function App() {
                   </div>
                 </div>
               </section>
+
             </div>
           )}
 
@@ -2125,6 +2236,635 @@ export default function App() {
               <button onClick={handleSaveTags} className="w-full bg-lime-400 hover:bg-lime-500 text-neutral-950 py-3 rounded-xl font-bold transition-colors">
                 변경사항 저장
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Grid Edit Modal */}
+      {selectedPost && (
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col sm:flex-row overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+            
+            <div className="w-full sm:w-1/2 bg-neutral-950 p-6 flex flex-col relative border-r border-neutral-800">
+              <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <ImageIcon className="text-lime-400" size={20}/> 첨부된 사진 ({(selectedPost.images || []).length}장)
+              </h3>
+              
+              <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+                {(selectedPost.images || []).map((imgUrl, idx) => (
+                  <div key={idx} className="relative group rounded-xl overflow-hidden border border-neutral-800 bg-neutral-900 aspect-[4/5]">
+                    <img src={imgUrl} className="w-full h-full object-cover" alt="preview"/>
+                    <button 
+                      onClick={() => removeImageFromPost(idx)}
+                      className="absolute top-3 right-3 bg-black/60 hover:bg-red-500 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-all backdrop-blur-md"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                    {idx === 0 && <span className="absolute top-3 left-3 bg-lime-400 text-neutral-950 text-xs font-bold px-2 py-1 rounded-md shadow-md">Cover</span>}
+                  </div>
+                ))}
+                
+                <label className="flex flex-col items-center justify-center border-2 border-dashed border-neutral-700 hover:border-lime-500 rounded-xl aspect-[4/5] cursor-pointer bg-neutral-900/50 transition-colors group">
+                  <div className="bg-neutral-800 p-3 rounded-full mb-2 group-hover:bg-lime-400 group-hover:text-neutral-950 transition-colors">
+                    <Plus size={24} />
+                  </div>
+                  <span className="text-sm font-medium text-neutral-400 group-hover:text-lime-400 transition-colors">사진 추가</span>
+                  <input type="file" multiple accept="image/*" className="hidden" onChange={handleGridImageUpload}/>
+                </label>
+              </div>
+            </div>
+
+            <div className="w-full sm:w-1/2 p-6 flex flex-col bg-neutral-900 relative">
+              <button onClick={() => setSelectedPost(null)} className="absolute top-4 right-4 text-neutral-400 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-full p-2 transition-colors">
+                <X size={20} />
+              </button>
+              
+              <div className="mb-4">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">본문(Caption) 편집</h3>
+                <span className="text-xs text-lime-400 mt-1 font-medium bg-lime-400/10 px-2 py-0.5 rounded-full inline-block">현재 계정: {activeAccount}</span>
+              </div>
+              
+              <textarea 
+                className="w-full flex-1 bg-neutral-950 border border-neutral-800 rounded-xl p-4 text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-lime-500 focus:ring-1 focus:ring-lime-500 resize-none font-sans text-sm leading-relaxed custom-scrollbar"
+                placeholder="인스타그램에 올릴 본문 내용을 여기에 작성해보세요."
+                value={selectedPost.caption}
+                onChange={(e) => setSelectedPost({ ...selectedPost, caption: e.target.value })}
+              />
+              
+              <div className="flex items-center gap-3 mt-6 pt-6 border-t border-neutral-800">
+                <button onClick={() => setPostDeleteConfirm(true)} className="flex-1 py-3 px-4 rounded-xl text-red-400 hover:bg-red-500/10 font-bold text-sm transition-colors border border-transparent hover:border-red-500/30">
+                  게시물 삭제
+                </button>
+                <button onClick={savePost} className="flex-[2] bg-lime-400 hover:bg-lime-500 text-neutral-950 py-3 px-4 rounded-xl font-bold text-sm shadow-lg shadow-lime-500/20 transition-all">
+                  저장 및 닫기
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Grid Lightbox */}
+      {lightboxPost && (
+        <div className="fixed inset-0 z-[110] bg-black/95 flex items-center justify-center backdrop-blur-md animate-in fade-in duration-200">
+          <button onClick={() => setLightboxPost(null)} className="absolute top-6 right-6 text-white hover:text-lime-400 p-2 z-10 transition-colors">
+            <X size={36} />
+          </button>
+
+          <div className="relative w-full max-w-5xl h-[80vh] flex items-center justify-center group">
+            <button 
+              onClick={(e) => { e.stopPropagation(); setCurrentSlideIndex(prev => prev === 0 ? lightboxPost.images.length - 1 : prev - 1); }}
+              className="absolute left-4 sm:left-[-60px] top-1/2 -translate-y-1/2 bg-black/40 hover:bg-neutral-800 text-white p-4 rounded-full transition-all flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 shadow-lg z-10 backdrop-blur-sm border border-white/10"
+            >
+              <ChevronLeft size={36} className="mr-1" />
+            </button>
+            <img 
+              key={currentSlideIndex} src={lightboxPost.images[currentSlideIndex]} alt="Slide View" 
+              className="max-w-full max-h-full object-contain select-none animate-in zoom-in-95 duration-300"
+            />
+            <button 
+              onClick={(e) => { e.stopPropagation(); setCurrentSlideIndex(prev => prev === lightboxPost.images.length - 1 ? 0 : prev + 1); }}
+              className="absolute right-4 sm:right-[-60px] top-1/2 -translate-y-1/2 bg-black/40 hover:bg-neutral-800 text-white p-4 rounded-full transition-all flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 shadow-lg z-10 backdrop-blur-sm border border-white/10"
+            >
+              <ChevronRight size={36} className="ml-1" />
+            </button>
+          </div>
+
+          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-3">
+            {lightboxPost.images.map((_, idx) => (
+              <button 
+                key={idx} onClick={() => setCurrentSlideIndex(idx)}
+                className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${idx === currentSlideIndex ? 'bg-lime-400 scale-125 shadow-[0_0_10px_rgba(163,230,53,0.5)]' : 'bg-white/30 hover:bg-white/60'}`}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Posing Library - Edit Modal */}
+      {editData && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-neutral-900 w-full max-w-3xl rounded-2xl shadow-2xl border border-neutral-800 flex flex-col max-h-[90vh]">
+            
+            <div className="flex items-center justify-between p-5 md:p-6 border-b border-neutral-800">
+              <div className="flex items-center gap-3">
+                <Settings className="w-5 h-5 text-lime-400" />
+                <h2 className="text-lg md:text-xl font-bold text-white">레퍼런스 설정 수정</h2>
+              </div>
+              <button onClick={() => setEditData(null)} className="text-neutral-400 hover:text-white">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-5 md:p-6 overflow-y-auto flex-1 space-y-6 md:space-y-8 custom-scrollbar">
+              <div className="space-y-3">
+                <label className="block text-sm font-bold text-neutral-300">원본 사진</label>
+                <div className="w-24 h-32 md:w-32 md:h-40 rounded-lg border border-neutral-700 overflow-hidden bg-neutral-950">
+                  <img src={editData.imageUrl} alt="Edit Preview" className="w-full h-full object-cover" />
+                </div>
+              </div>
+
+              <hr className="border-neutral-800" />
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                <div className="space-y-2">
+                  <label className="block text-sm font-bold text-neutral-300">총 인원수</label>
+                  <select 
+                    value={editData.headCount}
+                    onChange={(e) => setEditData({...editData, headCount: parseInt(e.target.value)})}
+                    className="w-full bg-neutral-950 border border-neutral-700 rounded-lg p-3 focus:border-lime-500 outline-none text-white"
+                  >
+                    {[...Array(20)].map((_, i) => (
+                      <option key={i} value={i + 1}>{i + 1}명</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-bold text-neutral-300">부모 구성</label>
+                  <select 
+                    value={editData.parents}
+                    onChange={(e) => setEditData({...editData, parents: e.target.value})}
+                    className="w-full bg-neutral-950 border border-neutral-700 rounded-lg p-3 focus:border-lime-500 outline-none text-white"
+                  >
+                    {PARENT_OPTIONS.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-bold text-neutral-300">조부모 구성</label>
+                  <select 
+                    value={editData.grandparents}
+                    onChange={(e) => setEditData({...editData, grandparents: e.target.value})}
+                    className="w-full bg-neutral-950 border border-neutral-700 rounded-lg p-3 focus:border-lime-500 outline-none text-white"
+                  >
+                    {GRANDPARENT_OPTIONS.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <label className="block text-sm font-bold text-neutral-300">자녀 구성 & 인원 수</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  {CHILD_OPTIONS.map(child => {
+                    const selectedItem = editData.children.find(c => c.id === child.id);
+                    const isSelected = !!selectedItem;
+                    const count = selectedItem ? selectedItem.count : 0;
+
+                    return (
+                      <div 
+                        key={child.id}
+                        className={`relative rounded-lg border transition-all overflow-hidden flex flex-col
+                          ${isSelected ? 'bg-lime-400/10 border-lime-400' : 'bg-neutral-950 border-neutral-800 hover:border-neutral-600'}
+                        `}
+                      >
+                        <button
+                            onClick={() => toggleEditChildTag(child.id)}
+                            className={`w-full p-3 text-left flex items-center gap-2 ${isSelected ? 'text-white' : 'text-neutral-400'}`}
+                        >
+                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 ${isSelected ? 'border-lime-400 bg-lime-400' : 'border-neutral-600'}`}>
+                                {isSelected && <Check className="w-3 h-3 text-neutral-950" />}
+                            </div>
+                            <span className="truncate text-sm font-medium">{child.label}</span>
+                        </button>
+
+                        {isSelected && (
+                            <div className="flex items-center justify-between bg-lime-900/30 px-3 py-1.5 border-t border-lime-500/30">
+                                <span className="text-xs text-lime-400 font-semibold">{count}명</span>
+                                <div className="flex items-center gap-1">
+                                    <button 
+                                        onClick={(e) => handleEditChildCountChange(e, child.id, -1)}
+                                        className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
+                                        disabled={count <= 1}
+                                    >
+                                        <Minus className="w-3 h-3" />
+                                    </button>
+                                    <button 
+                                        onClick={(e) => handleEditChildCountChange(e, child.id, 1)}
+                                        className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
+                                    >
+                                        <Plus className="w-3 h-3" />
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+               <div className="space-y-3">
+                <label className="block text-sm font-bold text-neutral-300">반려동물</label>
+                <div className={`relative rounded-lg border transition-all overflow-hidden flex flex-col w-full md:w-1/2
+                    ${editData.petCount > 0 ? 'bg-lime-400/10 border-lime-400' : 'bg-neutral-950 border-neutral-800 hover:border-neutral-600'}
+                `}>
+                     <button
+                        onClick={toggleEditPet}
+                        className={`w-full p-3 text-left flex items-center gap-2 ${editData.petCount > 0 ? 'text-white' : 'text-neutral-400'}`}
+                    >
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 ${editData.petCount > 0 ? 'border-lime-400 bg-lime-400' : 'border-neutral-600'}`}>
+                            {editData.petCount > 0 && <Check className="w-3 h-3 text-neutral-950" />}
+                        </div>
+                        <Dog className="w-4 h-4" />
+                        <span className="truncate text-sm font-medium">반려견</span>
+                    </button>
+
+                    {editData.petCount > 0 && (
+                         <div className="flex items-center justify-between bg-lime-900/30 px-3 py-1.5 border-t border-lime-500/30">
+                            <span className="text-xs text-lime-400 font-semibold">{editData.petCount}마리</span>
+                            <div className="flex items-center gap-1">
+                                <button 
+                                    onClick={(e) => handleEditPetCountChange(e, -1)}
+                                    className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
+                                    disabled={editData.petCount <= 1}
+                                >
+                                    <Minus className="w-3 h-3" />
+                                </button>
+                                <button 
+                                    onClick={(e) => handleEditPetCountChange(e, 1)}
+                                    className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
+                                >
+                                    <Plus className="w-3 h-3" />
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+               </div>
+
+               <div className="space-y-2">
+                 <label className="block text-sm font-bold text-neutral-300">촬영 팁 / 메모</label>
+                 <textarea 
+                    value={editData.memo}
+                    onChange={(e) => setEditData({...editData, memo: e.target.value})}
+                    placeholder="예: 애플박스 2개 사용, 창가 자연광, 하이앵글 촬영 등"
+                    className="w-full bg-neutral-950 border border-neutral-700 rounded-lg p-3 text-sm text-white focus:border-lime-500 outline-none resize-none h-24 custom-scrollbar"
+                 />
+               </div>
+            </div>
+
+            <div className="p-4 md:p-6 border-t border-neutral-800 flex justify-end gap-3 bg-neutral-900 rounded-b-2xl">
+              <button 
+                onClick={() => setEditData(null)}
+                className="px-4 md:px-6 py-2.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 font-medium transition-colors text-sm md:text-base"
+              >
+                취소
+              </button>
+              <button 
+                onClick={handlePosingEditSave} disabled={isPosingUploading}
+                className="px-4 md:px-6 py-2.5 rounded-lg bg-lime-400 hover:bg-lime-500 text-neutral-950 font-medium shadow-lg hover:shadow-lime-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-all text-sm md:text-base"
+              >
+                {isPosingUploading ? '저장 중...' : (<><Save className="w-4 h-4" /> 수정 완료</>)}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* Posing Library - Upload Modal */}
+      {isPosingUploadModalOpen && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-neutral-900 w-full max-w-3xl rounded-2xl shadow-2xl border border-neutral-800 flex flex-col max-h-[90vh]">
+            
+            <div className="flex items-center justify-between p-5 md:p-6 border-b border-neutral-800">
+              <div className="flex items-center gap-3">
+                <Upload className="w-5 h-5 text-lime-400 flex-shrink-0" />
+                <h2 className="text-lg md:text-xl font-bold text-white truncate">새 레퍼런 일괄 등록</h2>
+                {selectedImages.length > 0 && (
+                    <span className="hidden sm:inline-block bg-lime-400/20 text-lime-400 text-xs font-bold px-2.5 py-1 rounded-full border border-lime-400/30 whitespace-nowrap">
+                        {selectedImages.length}/10 장 선택됨
+                    </span>
+                )}
+              </div>
+              <button onClick={() => setIsPosingUploadModalOpen(false)} className="text-neutral-400 hover:text-white p-1">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-5 md:p-6 overflow-y-auto flex-1 space-y-6 md:space-y-8 custom-scrollbar">
+              
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                    <label className="block text-sm font-bold text-neutral-300">사진 선택 (최대 10장)</label>
+                    {selectedImages.length > 0 && (
+                        <span className="sm:hidden bg-lime-400/20 text-lime-400 text-xs font-bold px-2 py-0.5 rounded-full border border-lime-400/30">
+                            {selectedImages.length}/10 장
+                        </span>
+                    )}
+                </div>
+                
+                <div className="flex flex-wrap gap-3 md:gap-4">
+                  {selectedImages.map((imgSrc, idx) => (
+                    <div key={idx} className="relative w-20 h-28 md:w-28 md:h-36 rounded-lg border border-neutral-700 overflow-hidden group shadow-md bg-neutral-950">
+                        <img src={imgSrc} alt={`Preview ${idx}`} className="w-full h-full object-cover" />
+                        <button 
+                            onClick={() => removeSelectedImage(idx)} 
+                            className="absolute top-1.5 right-1.5 bg-black/60 text-white rounded-full p-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:bg-red-500"
+                        >
+                            <X className="w-3 h-3 md:w-4 md:h-4" />
+                        </button>
+                    </div>
+                  ))}
+
+                  {selectedImages.length < 10 && (
+                    <label className={`w-20 h-28 md:w-28 md:h-36 rounded-lg border-2 border-dashed border-neutral-700 flex flex-col items-center justify-center cursor-pointer hover:border-lime-500 hover:bg-lime-400/5 transition-all
+                        ${selectedImages.length === 0 ? 'w-full aspect-video md:aspect-auto' : ''}
+                    `}>
+                        <ImageIcon className="w-6 h-6 md:w-8 md:h-8 text-neutral-500 mb-1 md:mb-2" />
+                        <span className="text-[10px] md:text-xs text-neutral-400 font-medium">
+                            {selectedImages.length === 0 ? '클릭하여 선택' : '사진 추가'}
+                        </span>
+                        <input type="file" accept="image/*" multiple onChange={handlePosingFileSelect} className="hidden" />
+                    </label>
+                  )}
+                </div>
+                
+                {selectedImages.length === 0 && (
+                    <div className="text-xs md:text-sm text-neutral-400 pt-1">
+                        <p>한 가족의 다양한 포즈 컷을 여러 장 동시에 올려보세요.</p>
+                        <p className="text-lime-400 text-[10px] md:text-xs font-bold mt-1">* 한 번의 태그 설정으로 모든 사진에 동일하게 적용됩니다.</p>
+                    </div>
+                )}
+              </div>
+
+              <hr className="border-neutral-800" />
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
+                <div className="space-y-2">
+                  <label className="block text-sm font-bold text-neutral-300">총 인원수</label>
+                  <select 
+                    value={uploadData.headCount}
+                    onChange={(e) => setUploadData({...uploadData, headCount: parseInt(e.target.value)})}
+                    className="w-full bg-neutral-950 border border-neutral-700 rounded-lg p-3 focus:border-lime-500 outline-none text-white"
+                  >
+                    {[...Array(20)].map((_, i) => (
+                      <option key={i} value={i + 1}>{i + 1}명</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-bold text-neutral-300">부모 구성</label>
+                  <select 
+                    value={uploadData.parents}
+                    onChange={(e) => setUploadData({...uploadData, parents: e.target.value})}
+                    className="w-full bg-neutral-950 border border-neutral-700 rounded-lg p-3 focus:border-lime-500 outline-none text-white"
+                  >
+                    {PARENT_OPTIONS.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-bold text-neutral-300">조부모 구성</label>
+                  <select 
+                    value={uploadData.grandparents}
+                    onChange={(e) => setUploadData({...uploadData, grandparents: e.target.value})}
+                    className="w-full bg-neutral-950 border border-neutral-700 rounded-lg p-3 focus:border-lime-500 outline-none text-white"
+                  >
+                    {GRANDPARENT_OPTIONS.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <label className="block text-sm font-bold text-neutral-300">자녀 구성 & 인원 수</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  {CHILD_OPTIONS.map(child => {
+                    const selectedItem = uploadData.children.find(c => c.id === child.id);
+                    const isSelected = !!selectedItem;
+                    const count = selectedItem ? selectedItem.count : 0;
+
+                    return (
+                      <div 
+                        key={child.id}
+                        className={`relative rounded-lg border transition-all overflow-hidden flex flex-col
+                          ${isSelected ? 'bg-lime-400/10 border-lime-400' : 'bg-neutral-950 border-neutral-800 hover:border-neutral-600'}
+                        `}
+                      >
+                        <button
+                            onClick={() => toggleUploadChildTag(child.id)}
+                            className={`w-full p-3 text-left flex items-center gap-2 ${isSelected ? 'text-white' : 'text-neutral-400'}`}
+                        >
+                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 ${isSelected ? 'border-lime-400 bg-lime-400' : 'border-neutral-600'}`}>
+                                {isSelected && <Check className="w-3 h-3 text-neutral-950" />}
+                            </div>
+                            <span className="truncate text-sm font-medium">{child.label}</span>
+                        </button>
+
+                        {isSelected && (
+                            <div className="flex items-center justify-between bg-lime-900/30 px-3 py-1.5 border-t border-lime-500/30">
+                                <span className="text-xs text-lime-400 font-semibold">{count}명</span>
+                                <div className="flex items-center gap-1">
+                                    <button 
+                                        onClick={(e) => handleUploadChildCountChange(e, child.id, -1)}
+                                        className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
+                                        disabled={count <= 1}
+                                    >
+                                        <Minus className="w-3 h-3" />
+                                    </button>
+                                    <button 
+                                        onClick={(e) => handleUploadChildCountChange(e, child.id, 1)}
+                                        className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
+                                    >
+                                        <Plus className="w-3 h-3" />
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+               <div className="space-y-3">
+                <label className="block text-sm font-bold text-neutral-300">반려동물</label>
+                <div className={`relative rounded-lg border transition-all overflow-hidden flex flex-col w-full sm:w-1/2 md:w-1/3
+                    ${uploadData.petCount > 0 ? 'bg-lime-400/10 border-lime-400' : 'bg-neutral-950 border-neutral-800 hover:border-neutral-600'}
+                `}>
+                     <button
+                        onClick={toggleUploadPet}
+                        className={`w-full p-3 text-left flex items-center gap-2 ${uploadData.petCount > 0 ? 'text-white' : 'text-neutral-400'}`}
+                    >
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 ${uploadData.petCount > 0 ? 'border-lime-400 bg-lime-400' : 'border-neutral-600'}`}>
+                            {uploadData.petCount > 0 && <Check className="w-3 h-3 text-neutral-950" />}
+                        </div>
+                        <Dog className="w-4 h-4" />
+                        <span className="truncate text-sm font-medium">반려견</span>
+                    </button>
+
+                    {uploadData.petCount > 0 && (
+                         <div className="flex items-center justify-between bg-lime-900/30 px-3 py-1.5 border-t border-lime-500/30">
+                            <span className="text-xs text-lime-400 font-semibold">{uploadData.petCount}마리</span>
+                            <div className="flex items-center gap-1">
+                                <button 
+                                    onClick={(e) => handleUploadPetCountChange(e, -1)}
+                                    className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
+                                    disabled={uploadData.petCount <= 1}
+                                >
+                                    <Minus className="w-3 h-3" />
+                                </button>
+                                <button 
+                                    onClick={(e) => handleUploadPetCountChange(e, 1)}
+                                    className="p-1 hover:bg-lime-500/20 rounded text-lime-400"
+                                >
+                                    <Plus className="w-3 h-3" />
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+               </div>
+
+               <div className="space-y-2">
+                 <label className="block text-sm font-bold text-neutral-300">촬영 팁 / 메모 <span className="text-neutral-500 font-normal">(선택사항)</span></label>
+                 <textarea 
+                    value={uploadData.memo}
+                    onChange={(e) => setUploadData({...uploadData, memo: e.target.value})}
+                    placeholder="예: 애플박스 2개 사용, 창가 자연광, 하이앵글 촬영 등"
+                    className="w-full bg-neutral-950 border border-neutral-700 rounded-lg p-3 text-sm text-white focus:border-lime-500 outline-none resize-none h-24 custom-scrollbar"
+                 />
+               </div>
+            </div>
+
+            <div className="p-4 md:p-6 border-t border-neutral-800 flex justify-end gap-3 bg-neutral-900 rounded-b-2xl">
+              <button 
+                onClick={() => setIsPosingUploadModalOpen(false)}
+                className="px-4 md:px-6 py-2.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 font-medium transition-colors text-sm md:text-base"
+              >
+                취소
+              </button>
+              <button 
+                onClick={handlePosingUpload} disabled={selectedImages.length === 0 || isPosingUploading}
+                className="px-4 md:px-6 py-2.5 rounded-lg bg-lime-400 hover:bg-lime-500 text-neutral-950 font-medium shadow-lg hover:shadow-lime-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-all text-sm md:text-base"
+              >
+                {isPosingUploading ? '저장 중...' : (<><Save className="w-4 h-4" /> 일괄 저장하기</>)}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* Posing Library - Lightbox Modal */}
+      {currentView === 'posing' && viewingPhoto && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/95 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={() => setViewingPhotoId(null)}>
+          {filteredPhotos.length > 1 && (
+            <>
+                <button onClick={handlePrevPhoto} className="absolute left-2 md:left-6 top-1/2 -translate-y-1/2 p-3 md:p-4 text-white bg-black/60 hover:bg-black/80 rounded-full transition-all z-[120] shadow-2xl backdrop-blur-md">
+                    <ChevronLeft className="w-7 h-7 md:w-10 md:h-10 drop-shadow-lg" />
+                </button>
+                <button onClick={handleNextPhoto} className="absolute right-2 md:right-6 top-1/2 -translate-y-1/2 p-3 md:p-4 text-white bg-black/60 hover:bg-black/80 rounded-full transition-all z-[120] shadow-2xl backdrop-blur-md">
+                    <ChevronRight className="w-7 h-7 md:w-10 md:h-10 drop-shadow-lg" />
+                </button>
+            </>
+          )}
+          <div className="absolute top-4 right-4 md:top-6 md:right-6 flex items-center gap-3 z-[120]">
+             <button onClick={(e) => handleOpenEditModal(e, viewingPhoto)} className="flex items-center gap-1.5 md:gap-2 px-3 py-1.5 rounded-full transition-all backdrop-blur-sm border bg-white/10 border-white/10 text-white hover:bg-white/20">
+                <Settings className="w-4 h-4" /> <span className="text-xs font-bold hidden md:inline">설정 수정</span>
+             </button>
+             <button onClick={(e) => handleToggleFavorite(e, viewingPhoto.id, viewingPhoto.isFavorite)} className={`flex items-center gap-1.5 md:gap-2 px-3 py-1.5 rounded-full transition-all backdrop-blur-sm border ${viewingPhoto.isFavorite ? 'bg-lime-400/20 border-lime-400 text-lime-400' : 'bg-white/10 border-white/10 text-white hover:bg-white/20'}`}>
+                <Heart className={`w-4 h-4 ${viewingPhoto.isFavorite ? 'fill-current' : ''}`} /> <span className="text-xs font-bold hidden md:inline">{viewingPhoto.isFavorite ? '즐겨찾기 취소' : '즐겨찾기'}</span>
+             </button>
+             <button onClick={() => setViewingPhotoId(null)} className="p-1.5 md:p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-colors ml-1">
+               <X className="w-6 h-6 md:w-8 md:h-8" />
+             </button>
+          </div>
+          <div className="relative w-full h-full flex flex-col items-center justify-center pt-16 pb-20 md:pt-0 md:pb-0" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onClick={(e) => e.stopPropagation()}>
+            <img src={viewingPhoto.imageUrl} alt="Full Size Reference" className="w-auto h-auto max-w-full max-h-[75vh] md:max-h-[85vh] object-contain rounded-sm shadow-2xl select-none" />
+            {viewingPhoto.memo && (
+                <div className="absolute bottom-[80px] left-4 right-4 md:bottom-4 md:left-auto md:right-auto bg-black/70 backdrop-blur-md px-4 md:px-6 py-3 md:py-4 rounded-xl border border-white/10 shadow-2xl text-center md:max-w-2xl z-10">
+                    <div className="flex items-center justify-center gap-2 mb-1"><AlignLeft className="w-4 h-4 text-lime-400" /><span className="text-[10px] md:text-xs font-bold text-lime-400 uppercase tracking-widest">촬영 팁</span></div>
+                    <p className="text-white text-xs md:text-sm leading-relaxed">{viewingPhoto.memo}</p>
+                </div>
+            )}
+            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 text-white/40 text-xs px-4 py-2 bg-black/40 rounded-full backdrop-blur-md md:hidden z-10 flex items-center gap-2">좌우로 스와이프 하거나 화살표 터치</div>
+          </div>
+        </div>
+      )}
+
+      {/* Posing Library - Mobile Filter Bottom Sheet */}
+      {currentView === 'posing' && isMobileFilterOpen && (
+        <div className="fixed inset-0 z-[100] flex flex-col justify-end bg-black/80 backdrop-blur-sm lg:hidden animate-in fade-in duration-200">
+            <div className="absolute inset-0" onClick={() => setIsMobileFilterOpen(false)} />
+            <div className="bg-neutral-900 w-full rounded-t-2xl shadow-2xl border-t border-neutral-800 flex flex-col max-h-[85vh] relative z-10 animate-in slide-in-from-bottom-full duration-300">
+                <div className="flex items-center justify-between p-5 border-b border-neutral-800">
+                    <div className="flex items-center gap-2"><Filter className="w-5 h-5 text-lime-400" /><h2 className="font-bold text-lg text-white">필터 검색</h2></div>
+                    <button onClick={() => setIsMobileFilterOpen(false)} className="text-neutral-400 hover:text-white p-1"><X className="w-6 h-6" /></button>
+                </div>
+                <div className="p-5 overflow-y-auto pb-24 custom-scrollbar"><FilterContentControls /></div>
+                <div className="absolute bottom-0 w-full p-4 bg-gradient-to-t from-neutral-900 via-neutral-900 to-transparent pt-10">
+                    <button onClick={() => setIsMobileFilterOpen(false)} className="w-full py-3.5 bg-lime-400 hover:bg-lime-500 text-neutral-950 font-bold rounded-xl shadow-lg flex items-center justify-center gap-2">{filteredPhotos.length}개의 시안 보기</button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* ==========================================
+          [Overlays & Modals] 공통 컴포넌트
+          ========================================== */}
+      
+      {/* Thread Lightbox */}
+      {threadLightboxMedia && (
+        <div className="fixed inset-0 z-[200] bg-black flex items-center justify-center animate-in fade-in duration-200">
+          <button onClick={() => setThreadLightboxMedia(null)} className="absolute top-6 left-6 text-white hover:text-lime-400 p-2 z-10 transition-colors bg-black/40 rounded-full">
+            <X size={32} />
+          </button>
+          
+          <div className="w-full h-full p-4 md:p-12 flex items-center justify-center">
+            {threadLightboxMedia.type === 'image' ? (
+              <img src={threadLightboxMedia.url} alt="Fullscreen View" className="max-w-full max-h-full object-contain" />
+            ) : (
+              <video src={threadLightboxMedia.url} controls autoPlay className="max-w-full max-h-full outline-none" />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 공통 알림 / 삭제 확인 창 */}
+      {alertMessage && (
+        <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl max-w-sm w-full text-center shadow-2xl">
+            <p className="text-white mb-6 text-lg font-medium">{alertMessage}</p>
+            <button onClick={() => setAlertMessage('')} className="bg-lime-400 hover:bg-lime-500 text-neutral-950 px-6 py-3 rounded-xl font-bold w-full transition-colors">확인</button>
+          </div>
+        </div>
+      )}
+
+      {deleteConfirmAcc && (
+        <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl max-w-sm w-full text-center shadow-2xl">
+            <h3 className="text-xl font-bold text-white mb-2">계정 삭제</h3>
+            <p className="text-neutral-400 mb-6 text-sm leading-relaxed">
+              <strong className="text-white">'{deleteConfirmAcc}'</strong> 계정과<br/>관련된 모든 그리드 데이터가 삭제됩니다.<br/>계속하시겠습니까?
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteConfirmAcc(null)} className="flex-1 bg-neutral-800 hover:bg-neutral-700 text-white px-4 py-3 rounded-xl font-bold transition-colors">취소</button>
+              <button onClick={executeDeleteAccount} className="flex-1 bg-red-500 hover:bg-red-600 text-white px-4 py-3 rounded-xl font-bold transition-colors">삭제하기</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {postDeleteConfirm && (
+        <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl max-w-sm w-full text-center shadow-2xl">
+            <h3 className="text-xl font-bold text-white mb-2">게시물 삭제</h3>
+            <p className="text-neutral-400 mb-6 text-sm">이 게시물을 영구적으로 삭제하시겠습니까?</p>
+            <div className="flex gap-3">
+              <button onClick={() => setPostDeleteConfirm(false)} className="flex-1 bg-neutral-800 hover:bg-neutral-700 text-white px-4 py-3 rounded-xl font-bold transition-colors">취소</button>
+              <button onClick={executeDeletePost} className="flex-1 bg-red-500 hover:bg-red-600 text-white px-4 py-3 rounded-xl font-bold transition-colors">삭제하기</button>
             </div>
           </div>
         </div>
